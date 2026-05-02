@@ -1,0 +1,1275 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for AnyCompany retail demo with Bedrock Knowledge Base'
+
+Parameters:
+  RandomSuffix:
+    Type: String
+    Default: ''
+    Description: Random suffix for bucket names (leave empty to auto-generate)
+  
+  ProductsKnowledgeBaseName:
+    Type: String
+    Description: Name of the Knowledge Base for AnyCompany's products
+    Default: 'anycompany-products-knowledge-base'
+
+  VectorBucketName:
+    Type: String
+    Description: Name of the S3 Vector bucket to be created
+    Default: 'anycompany-products-vector-store'
+  
+  VectorIndexName:
+    Type: String
+    Description: Name of the vector index within the S3 Vector bucket
+    Default: 'products-index'
+  
+  # VSCode Server Parameters
+  VSCodeServerPassword:
+    Description: The password for the VS Code server (must be at least 12 characters with uppercase, lowercase, numbers, and special characters)
+    Type: String
+    Default: 'AgentWorkshop@123#'
+    MinLength: 12
+    AllowedPattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$%^&*])[\w@#$%^&*]{12,}'
+    ConstraintDescription: "Password must be at least 12 characters and include uppercase, lowercase, numbers, and special characters (@#$%^&*)."
+  
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Description: Latest AMI ID for Amazon Linux 2023, You don't need to change this value.
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+  
+  VSCodeServerName:
+    Type: String
+    Description: EC2 instance name for VS Code server
+    Default: 'VSCode-Server'
+  
+  InstanceType:
+    Type: String
+    Description: EC2 instance type for VS Code server. Recommended to use t3.medium or larger for best performance
+    Default: 't3.large'
+    AllowedValues:
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+  
+  SourceIPAddress:
+    Type: String
+    Description: "Allowed source IP address (CIDR notation) to access the VS Code server. It is recommended to restrict to your client IP address. Please refer to https://ifconfig.me/"
+    Default: '0.0.0.0/0'
+    ConstraintDescription: "Must be a valid CIDR notation IP address range (e.g., 0.0.0.0/0)"
+  
+  VpcCidr:
+    Type: String
+    Description: CIDR block for the VPC
+    Default: '10.0.0.0/16'
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+  
+  PublicSubnetCidr:
+    Type: String
+    Description: CIDR block for the public subnet
+    Default: '10.0.1.0/24'
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(1[6-9]|2[0-8]))$
+
+Conditions:
+  UseDefaultRandomSuffix: !Equals [!Ref RandomSuffix, '']
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "S3 and Knowledge Base Configuration"
+        Parameters:
+          - RandomSuffix
+          - VectorBucketName
+          - VectorIndexName
+      - Label:
+          default: "Instance Configuration"
+        Parameters:
+          - InstanceType
+          - VSCodeServerName
+          - VSCodeServerPassword
+          - LatestAmiId
+      - Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcCidr
+          - PublicSubnetCidr
+      - Label:
+          default: "Access Control"
+        Parameters:
+          - SourceIPAddress
+
+Resources:
+  # ========================================
+  # SSM PARAMETERS FOR WORKSHOP CONFIGURATION
+  # ========================================
+  
+  # Product Search Knowledge Base ID Parameter
+  ProductSearchKnowledgeBaseIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: 'product_search_kb_id'
+      Type: String
+      Value: 'placeholder-product-search-kb-id'
+      Description: 'Knowledge Base ID for product search functionality'
+      Tags:
+        Environment: !Ref AWS::StackName
+        Service: Bedrock
+        Component: ProductSearchKB
+
+  # Product Search Agent Model ID Parameter
+  ProductSearchAgentModelIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: 'prod_search_agent_model_id'
+      Type: String
+      Value: 'anthropic.claude-3-haiku-20240307-v1:0'
+      Description: 'Model ID for the product search agent'
+      Tags:
+        Environment: !Ref AWS::StackName
+        Service: Bedrock
+        Component: AgentModel
+
+  # AnyCompany Product Reviews MCP Server URL Parameter
+  AnyCompProductReviewsMcpServerUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: 'anycomp_prod_reviews_mcp_server_url'
+      Type: String
+      Value: 'NOT CONFIGURED'
+      Description: 'URL for AnyCompany product reviews MCP server'
+      Tags:
+        Environment: !Ref AWS::StackName
+        Service: MCP
+        Component: ProductReviewsServer
+
+  # AnyCompany AgCore Gateway Cognito Access Token (Secure)
+  AnyCompAgcoreGwCognitoAccessTokenParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: 'anycomp_agcore_gw_cognito_accesstoken'
+      Type: String
+      Value: 'placeholder-cognito-access-token'
+      Description: 'Cognito access token for AnyCompany AgCore Gateway'
+      Tags:
+        Environment: !Ref AWS::StackName
+        Service: Cognito
+        Component: AccessToken
+
+  # ========================================
+  # 1. S3 BUCKETS (First)
+  # ========================================
+  
+  # S3 Bucket for retail data
+  RetailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If 
+        - UseDefaultRandomSuffix
+        - !Sub 'anycompany-retail-${AWS::AccountId}-${AWS::Region}'
+        - !Sub 'anycompany-retail-${RandomSuffix}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  
+  # DynamoDB table for product inventory
+  ProductInventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: anycompany_product_inventory
+      AttributeDefinitions:
+        - AttributeName: product_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: product_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # DynamoDB table for product reviews
+  ProductReviewsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: anycompany_product_reviews
+      AttributeDefinitions:
+        - AttributeName: product_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: product_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ========================================
+  # 2. NETWORKING AND EC2 (Second)
+  # ========================================
+  
+  # IAM Role for Bedrock Knowledge Base
+  BedrockKnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !If 
+        - UseDefaultRandomSuffix
+        - !Sub 'BedrockKnowledgeBaseRole-${AWS::AccountId}-${AWS::Region}'
+        - !Sub 'BedrockKnowledgeBaseRole-${RandomSuffix}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+      Policies:
+        - PolicyName: S3DataSourceAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${RetailBucket.Arn}/*'
+                  - !GetAtt RetailBucket.Arn
+        - PolicyName: BedrockInvokeModelPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockInvokeModelStatement
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+        - PolicyName: S3VectorsAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3vectors:GetIndex
+                  - s3vectors:QueryVectors
+                  - s3vectors:PutVectors
+                  - s3vectors:GetVectors
+                  - s3vectors:DeleteVectors
+                Resource:
+                  - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}/index/${VectorIndexName}'
+                  - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/bedrock-knowledge-base*/index/bedrock-knowledge-base-default-index'
+
+  # ========================================
+  # LAMBDA FUNCTION AND IAM ROLE
+  # ========================================
+  
+  # IAM Role for Lambda Function
+  RetrieveProductReviewsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-RetrieveProductReviewsRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess
+      Path: /service-role/
+
+  # Lambda Function for Retrieving Product Reviews
+  RetrieveProductReviewsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-retrieve-product-reviews'
+      Runtime: python3.12
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt RetrieveProductReviewsRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Description: 'Lambda function to retrieve product reviews from DynamoDB'
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore.exceptions import ClientError
+
+
+          dynamodb = boto3.resource('dynamodb', region_name='us-west-2')
+
+          def lambda_handler(event, context):
+              """Retrieve reviews for a product."""
+              print ("event in handler ::", event)
+              print ("context in handler ::", context)
+              product_id = event['product_id']
+              print ("calling retrieve_review for the product :: ", product_id)
+              product_reviews = retrieve_review(product_id)
+              print ("product_reviews ::", product_reviews)
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(product_reviews)
+              }
+
+
+          def retrieve_review(product_id: str):
+              """Retrieve the reviews for a product."""
+              try:
+                  print ("product_id ::", product_id)
+                  dynamodb_table = dynamodb.Table('anycompany_product_reviews')
+                  response = dynamodb_table.query(
+                      KeyConditionExpression='product_id = :pid',
+                      ExpressionAttributeValues={
+                          ':pid': product_id
+                      }
+                  )
+                  print ("response in retrieve_review ::", response)
+                  if 'Items' in response:
+                      return response['Items']
+                  return {"error": "No reviews found for this product"}
+              except ClientError as e:
+                  return {"error": f"Database error: {str(e)}"}
+              except Exception as e:
+                  return {"error": f"Unexpected error: {str(e)}"}
+      TracingConfig:
+        Mode: PassThrough
+      Architectures:
+        - x86_64
+      EphemeralStorage:
+        Size: 512
+      LoggingConfig:
+        LogFormat: Text
+        LogGroup: !Sub '/aws/lambda/${AWS::StackName}-retrieve-product-reviews'
+
+  # CloudWatch Log Group for Lambda Function
+  RetrieveProductReviewsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-retrieve-product-reviews'
+      RetentionInDays: 14
+
+  # ========================================
+  # COGNITO USER POOL AND AUTHENTICATION
+  # ========================================
+
+  # Cognito User Pool
+  WorkshopUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-workshop-user-pool'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+
+  # Cognito User Pool Client
+  WorkshopUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-workshop-client'
+      UserPoolId: !Ref WorkshopUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+      AccessTokenValidity: 24
+      TokenValidityUnits:
+        AccessToken: hours
+      PreventUserExistenceErrors: ENABLED
+  
+  WorkshopAdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref WorkshopUserPool
+      Username: testuser
+      UserAttributes:
+        - Name: email
+          Value: testuser@example.com
+
+   
+  # Lambda Function to Set Permanent Password and Generate Access Token
+  CognitoSetupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-cognito-setup'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt CognitoSetupRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref WorkshopUserPool
+          CLIENT_ID: !Ref WorkshopUserPoolClient
+          USERNAME: testuser
+          PASSWORD: 'MyPassword123!'
+          STACK_NAME: !Ref AWS::StackName
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import cfnresponse
+          import os
+          
+          def lambda_handler(event, context):
+              fromCloudFormation = "ResponseURL" in event
+              print(f"fromCloudFormation is {fromCloudFormation}")
+
+              try:
+                  cognito = boto3.client('cognito-idp')
+                  ssm = boto3.client('ssm')
+                  
+                  # Get values from environment variables
+                  user_pool_id = os.environ['USER_POOL_ID']
+                  client_id = os.environ['CLIENT_ID']
+                  username = os.environ['USERNAME']
+                  password = os.environ['PASSWORD']
+                  stack_name = os.environ['STACK_NAME']
+                  
+                  
+                  # Set permanent password
+                  cognito.admin_set_user_password(
+                      UserPoolId=user_pool_id,
+                      Username=username,
+                      Password=password,
+                      Permanent=True
+                  )
+                  
+                  # Initiate authentication to get access token
+                  auth_response = cognito.initiate_auth(
+                      ClientId=client_id,
+                      AuthFlow='USER_PASSWORD_AUTH',
+                      AuthParameters={
+                          'USERNAME': username,
+                          'PASSWORD': password
+                      }
+                  )
+                  
+                  access_token = auth_response['AuthenticationResult']['AccessToken']
+                  
+                  # Store the access token in SSM Parameter Store
+                  parameter_name = f'anycomp_agcore_gw_cognito_accesstoken'
+                  ssm.put_parameter(
+                      Name=parameter_name,
+                      Value=access_token,
+                      Type='String',
+                      Description='Cognito access token for AnyCompany AgCore Gateway',
+                      Overwrite=True
+                  )
+                  
+                  print("Access token updated in SSM parameter store")
+                  print("Access Token is " + access_token)
+                  print ("event :: ", event)
+
+                  if fromCloudFormation:
+                     print("Event is from CloudFormation")
+                     response_data = {
+                          'AccessToken': access_token
+                     }
+                     cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+                  else:
+                     print("Event is not from CloudFormation")
+
+              except Exception as e:
+                  if fromCloudFormation:
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {}) 
+                  print(f"Error: {str(e)}")
+
+
+  # IAM Role for Cognito Setup Lambda
+  CognitoSetupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-cognito-setup-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CognitoAdminPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminSetUserPassword
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:AdminGetUser
+                Resource: !GetAtt WorkshopUserPool.Arn
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                Resource: 
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+
+  # Custom Resource to Execute Cognito Setup
+  CognitoSetupExecution:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt CognitoSetupFunction.Arn
+    DependsOn:
+      - WorkshopUserPoolClient
+      - WorkshopAdminUser
+
+  # IAM Role for Bedrock AgentCore Runtime
+  BedrockAgentCoreRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-bedrock-agentcore-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AssumeRolePolicy
+            Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*'
+      Policies:
+        - PolicyName: BedrockAgentCorePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockPermissions
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
+              - Sid: ECRImageAccess
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: 
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+              - Effect: Allow
+                Action:
+                  - logs:DescribeLogStreams
+                  - logs:CreateLogGroup
+                Resource: 
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*'
+              - Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                Resource: 
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*'
+              - Sid: ECRTokenAccess
+                Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
+                Resource: '*'
+              - Effect: Allow
+                Resource: '*'
+                Action: cloudwatch:PutMetricData
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: bedrock-agentcore
+              - Sid: GetAgentAccessToken
+                Effect: Allow
+                Action:
+                  - bedrock-agentcore:GetWorkloadAccessToken
+                  - bedrock-agentcore:GetWorkloadAccessTokenForJWT
+                  - bedrock-agentcore:GetWorkloadAccessTokenForUserId
+                Resource: 
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default'
+                  - !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:workload-identity-directory/default/workload-identity/*'
+  
+
+  # ========================================
+  # VPC AND NETWORKING RESOURCES
+  # ========================================
+  WorkshopVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-VPC"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-IGW"
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref WorkshopVPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref WorkshopVPC
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PublicSubnet"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref WorkshopVPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PublicRT"
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet  # IAM Pol
+
+  # Policy for Bedrock and related services with simplified permissions
+  BedrockWorkshopPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Simplified policy for Bedrock Workshop with necessary permissions
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: BedrockModelPermissions
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:GetFoundationModel
+              - bedrock:ListFoundationModels
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - "arn:aws:bedrock:*:*:foundation-model/*"
+              - "arn:aws:bedrock:*:*:inference-profile/*"
+          - Sid: BedrockAgentPermissions
+            Effect: Allow
+            Action:
+              - bedrock:List*
+              - bedrock:Get*
+              - bedrock:Create*
+              - bedrock:Delete*
+              - bedrock:Update*
+              - bedrock:Start*
+              - bedrock:Prepare*
+              - bedrock:Associate*
+              - bedrock:Disassociate*
+              - bedrock:InvokeAgent
+              - bedrock:Retrieve
+              - bedrock:RetrieveAndGenerate
+              - bedrock:ApplyGuardrail
+            Resource: "*"
+          - Sid: S3Permissions
+            Effect: Allow
+            Action:
+              - s3:List*
+              - s3:Get*
+              - s3:Put*
+              - s3:Create*
+              - s3:Delete*
+            Resource:
+              - "arn:aws:s3:::anycompany*"
+              - "arn:aws:s3:::anycompany*/*"
+          - Sid: S3ListBuckets
+            Effect: Allow
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+          - Sid: IAMPermissions
+            Effect: Allow
+            Action:
+              - iam:List*
+              - iam:Get*
+              - iam:CreateRole
+              - iam:CreatePolicy
+              - iam:DeleteRole
+              - iam:DeletePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:CreateServiceLinkedRole
+            Resource:
+              - "arn:aws:iam::*:role/*AmazonBedrockExecutionRoleForKnowledgeBase*"
+              - "arn:aws:iam::*:role/*bedrock*"
+              - "arn:aws:iam::*:role/*lambda*"
+              - "arn:aws:iam::*:policy/*"
+          - Sid: PassRolePermission
+            Effect: Allow
+            Action: "iam:PassRole"
+            Resource:
+              - "arn:aws:iam::*:role/*bedrock*"
+              - "arn:aws:iam::*:role/*lambda*"
+              - "arn:aws:iam::*:role/AmazonBedrockExecutionRole*"
+              - "arn:aws:iam::*:role/BedrockKnowledgeBaseRole*"
+            Condition:
+              StringEquals:
+                iam:PassedToService:
+                  - "bedrock.amazonaws.com"
+                  - "lambda.amazonaws.com"
+          - Sid: STSPermissions
+            Effect: Allow
+            Action:
+              - sts:GetCallerIdentity
+            Resource: "*"
+          - Sid: DynamoDBPermissions
+            Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:DescribeTable
+              - dynamodb:ListTables
+              - dynamodb:GetRecords
+            Resource:
+              - "arn:aws:dynamodb:*:*:table/anycompany*"
+              - "arn:aws:dynamodb:*:*:table/anycompany*/index/*"
+          - Sid: SSMParameterPermissions
+            Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:GetParameters
+              - ssm:GetParametersByPath
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+          - Sid: MarketplaceOperationsFromBedrockFor3pModels
+            Effect: Allow
+            Action:
+              - aws-marketplace:Subscribe
+              - aws-marketplace:ViewSubscriptions
+              - aws-marketplace:Unsubscribe
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:CalledViaLast: bedrock.amazonaws.com
+
+  # Systems Manager permissions policy
+  SSMPermissionsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy for Systems Manager permissions
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - ssm:PutParameter
+              - ssm:GetParameter
+              - ssm:GetParameters
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+
+  # S3 Vectors permissions policy for EC2 instance
+  S3VectorsPermissionsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy for S3 Vectors operations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3vectors:CreateVectorBucket,
+              - s3vectors:PutVectorBucketPolicy,
+              - s3vectors:DeleteVectorBucket,
+              - s3vectors:DeleteVectorBucketPolicy,
+              - s3vectors:GetVectorBucket,
+              - s3vectors:GetVectorBucketPolicy,
+              - s3vectors:ListVectorBuckets,
+              - s3vectors:CreateIndex,
+              - s3vectors:DeleteIndex,
+              - s3vectors:GetIndex,
+              - s3vectors:ListIndexes,
+              - s3vectors:DeleteVectors,
+              - s3vectors:GetVectors,
+              - s3vectors:ListVectors,
+              - s3vectors:PutVectors,
+              - s3vectors:QueryVectors
+            Resource:
+                - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}'
+                - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}/index/${VectorIndexName}'
+          - Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+              - s3:GetBucketLocation
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource:
+              - "arn:aws:s3:::*vector*"
+              - "arn:aws:s3:::*vector*/*"
+
+  # IAM Role for EC2 Instance
+  VSCodeServerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref BedrockWorkshopPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - !Ref SSMPermissionsPolicy
+        - !Ref S3VectorsPermissionsPolicy
+      Path: "/"
+      RoleName: !Sub "${AWS::StackName}-VSCodeServerRole"
+
+  # Instance Profile for EC2
+  VSCodeServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref VSCodeServerRole
+
+  # Security Group
+  VSCodeServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow VS Code server access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref SourceIPAddress
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+        Description: "HTTPS outbound for package downloads and AWS API calls"
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+        Description: "HTTP outbound for package repositories"
+      - IpProtocol: tcp
+        FromPort: 53
+        ToPort: 53
+        CidrIp: 0.0.0.0/0
+        Description: "DNS TCP queries"
+      - IpProtocol: udp
+        FromPort: 53
+        ToPort: 53
+        CidrIp: 0.0.0.0/0
+        Description: "DNS UDP queries"
+      VpcId: !Ref WorkshopVPC
+
+  # EC2 Instance with IAM Role attached
+  VSCodeServerInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: 
+      - InternetGatewayAttachment
+    Properties:
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+          - !Ref VSCodeServerSecurityGroup
+          SubnetId: !Ref PublicSubnet
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref VSCodeServerInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: !Ref VSCodeServerName
+        - Key: Workshop
+          Value: "true"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+
+          # Clone Amazon Bedrock Agent workshop repository
+          echo "####################################################################################################"
+          
+          echo "####################################################################################################"
+          echo "Trying to install utilities"
+          dnf update -y && rm -rf /var/lib/rpm/.rpm.lock
+          dnf install -y docker git pip && systemctl start docker && chmod 777 /var/run/docker.sock
+          
+          echo "####################################################################################################"
+          echo "Installing Python 3.11"
+          dnf install -y python3.11
+          python3.11 --version
+          #alternatives --set python3 /usr/bin/python3.11
+          alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+          python --version
+
+          echo "####################################################################################################"
+          echo "Trying to install nodejs"
+          dnf update -y && rm -rf /var/lib/rpm/.rpm.lock
+          curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash - && rm -rf /var/lib/rpm/.rpm.lock && dnf install nodejs -y
+
+          echo "####################################################################################################"
+          echo "Trying to install code-server"
+          dnf update -y && rm -rf /var/lib/rpm/.rpm.lock
+          wget https://github.com/coder/code-server/releases/download/v4.96.4/code-server-4.96.4-amd64.rpm
+          yum install ./code-server-4.96.4-amd64.rpm -y
+          mkdir -p /home/ec2-user/.config/code-server
+          chown -R ec2-user:ec2-user /home/ec2-user/.config
+          echo "bind-addr: 0.0.0.0:8080" > /home/ec2-user/.config/code-server/config.yaml
+          echo "auth: password" >> /home/ec2-user/.config/code-server/config.yaml
+          echo "password: ${VSCodeServerPassword}-${AWS::AccountId}" >> /home/ec2-user/.config/code-server/config.yaml
+          echo "cert: false" >> /home/ec2-user/.config/code-server/config.yaml
+          su - ec2-user -c 'nohup code-server &'
+          
+          echo "####################################################################################################"
+          echo "Trying to install kubectl"
+          dnf update -y && rm -rf /var/lib/rpm/.rpm.lock
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          mv ./kubectl /usr/local/bin
+
+          echo "####################################################################################################"
+          echo "Trying to configure shell environment"
+          echo "alias ll='ls -la'" >> /home/ec2-user/.bash_profile
+          echo "alias h='history'" >> /home/ec2-user/.bash_profile
+          echo "alias rm='rm -i'" >> /home/ec2-user/.bash_profile
+          echo "alias k='kubectl'" >> /home/ec2-user/.bash_profile
+          
+          # Install AWS CLI v2
+          echo "####################################################################################################"
+          echo "Installing AWS CLI v2"
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          
+          # Configure AWS Region
+          echo "####################################################################################################"
+          echo "Configuring AWS Region"
+          mkdir -p /home/ec2-user/.aws
+          echo "[default]" > /home/ec2-user/.aws/config
+          echo "region = ${AWS::Region}" >> /home/ec2-user/.aws/config
+          chown -R ec2-user:ec2-user /home/ec2-user/.aws
+          
+          # Create S3 Vector DB
+          echo "####################################################################################################"
+          echo "Creating S3 Vector bucket and index"
+          aws s3vectors create-vector-bucket --vector-bucket-name ${VectorBucketName}
+          aws s3vectors create-index --vector-bucket-name ${VectorBucketName} --index-name ${VectorIndexName} --distance-metric cosine --dimension 1024 --data-type float32
+          
+          # Set Bedrock Knowledge Base Role ARN as environment variable
+          echo "####################################################################################################"
+          echo "Setting Bedrock Knowledge Base Role ARN"
+          echo "export BEDROCK_KB_ROLE_ARN=${BedrockKnowledgeBaseRole.Arn}" >> /home/ec2-user/.bash_profile
+          
+
+          create_and_wait_for_kb() {
+
+          cat > kb-config.json <<EOF
+          {
+                "name": "${ProductsKnowledgeBaseName}",
+                "description": "Knowledge Base for AnyCompany product information using S3 Vectors",
+                "roleArn": "${BedrockKnowledgeBaseRole.Arn}",
+                "knowledgeBaseConfiguration": {
+                  "type": "VECTOR",
+                  "vectorKnowledgeBaseConfiguration": {
+                    "embeddingModelArn": "arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0"
+                  }
+                },
+                "storageConfiguration": {
+                  "type": "S3_VECTORS",
+                  "s3VectorsConfiguration": {
+                    "indexArn": "arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}/index/${VectorIndexName}"
+                  }
+                }
+          }
+          EOF
+              
+          kb_id=$(aws bedrock-agent create-knowledge-base --cli-input-json file://kb-config.json --query 'knowledgeBase.knowledgeBaseId' --output text)
+
+          # Now wait till KB is created
+          if [ -z "$kb_id" ] || [ "$kb_id" = "None" ]; then
+            echo "Failed to create Knowledge Base"
+            return 1
+          fi
+
+          # Wait for completion
+          local max_wait=360  # 6 minutes
+          local elapsed=0
+          
+          while [ $elapsed -lt $max_wait ]; do
+            local status=$(aws bedrock-agent get-knowledge-base \
+              --knowledge-base-id "$kb_id" \
+              --query 'knowledgeBase.status' \
+              --output text)
+            
+            case "$status" in
+              "ACTIVE")
+                echo "$kb_id"  # Return the KB ID
+                return 0
+                ;;
+              "FAILED")
+          #      echo "Knowledge Base creation failed"
+                return 1
+                ;;
+              *)
+          #echo "Status: $status ($elapsed seconds elapsed)"
+                sleep 10
+                elapsed=$((elapsed + 10))
+                ;;
+            esac
+          done
+
+          echo "Timeout after $max_wait seconds"
+          return 1
+          }
+
+          
+          # Usage
+          KB_ID=$(create_and_wait_for_kb)
+          if [ $? -eq 0 ]; then
+            echo "Knowledge Base $KB_ID is ready for use!"
+
+            # Store KB_ID in SSM Parameter Store
+            echo "Storing Knowledge Base ID in SSM Parameter Store..."
+            aws ssm put-parameter \
+              --name "product_search_kb_id" \
+              --value "$KB_ID" \
+              --type "String" \
+              --description "Knowledge Base ID for product search functionality" \
+              --overwrite
+
+          else
+            echo "Failed to create Knowledge Base"
+            exit 1
+          fi 
+
+          # Create data source for the Knowledge Base
+          echo "####################################################################################################"
+          echo "Creating data source for Knowledge Base"
+          cat > ds-config.json <<EOF
+          {
+            "knowledgeBaseId": "$KB_ID",
+            "name": "product-files-source",
+            "description": "Data source for AnyCompany product files",
+            "dataSourceConfiguration": {
+              "type": "S3",
+              "s3Configuration": {
+                "bucketArn": "${RetailBucket.Arn}",
+                "inclusionPrefixes": ["anycompany_products/"]
+              }
+            },
+            "vectorIngestionConfiguration": {
+              "chunkingConfiguration": {
+                "chunkingStrategy": "NONE"
+              }
+            }
+          }
+          EOF
+          
+          DS_ID=$(aws bedrock-agent create-data-source --cli-input-json file://ds-config.json --query 'dataSource.dataSourceId' --output text)
+          
+          if [ -z "$DS_ID" ] || [ "$DS_ID" = "None" ]; then
+            echo "Failed to create data source"
+            exit 1
+          fi
+          
+          echo "Data source created with ID: $DS_ID"
+          
+          
+          # Ensure cleanup script is executable
+          #chmod +x /home/ec2-user/amazon-bedrock-agent-workshop-for-gcr/workshop_cleanup.sh
+          
+          echo "Cloning Amazon Bedrock Agent GCR Workshop repository"
+          cd /home/ec2-user
+          git clone https://github.com/rasripa/rs-retail-agenticai-workshop-dummy.git
+          chown -R ec2-user:ec2-user /home/ec2-user/rs-retail-agenticai-workshop-dummy
+          
+          cd rs-retail-agenticai-workshop-dummy/prereqs
+
+          # Upload CSV files for Lambda product review and product inventory loading
+          # Do this first so that the data becomes available for the loading Lambda
+          echo "Uploading CSV files to S3 for Lambda processing..."
+          aws s3 cp data_files/product_inventory/product_inventory.csv s3://anycompany-retail-${AWS::AccountId}-${AWS::Region}/data_files/product_inventory/product_inventory.csv
+          aws s3 cp data_files/product_reviews/product_reviews.csv s3://anycompany-retail-${AWS::AccountId}-${AWS::Region}/data_files/product_reviews/product_reviews.csv
+          echo "Product review and inventory files uploaded successfully"
+
+          # Insert data into S3
+          cd rs-retail-agenticai-workshop-dummy/prereqs
+          aws s3 cp data_files/anycompany-dataset s3://anycompany-retail-${AWS::AccountId}-${AWS::Region}/anycompany_profile --recursive
+          aws s3 cp data_files/productFiles s3://anycompany-retail-${AWS::AccountId}-${AWS::Region}/anycompany_products --recursive
+          
+          # Get current region
+          TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+          region=`curl http://169.254.169.254/latest/meta-data/placement/region -H "X-aws-ec2-metadata-token: $TOKEN"`
+          export AWS_DEFAULT_REGION=$region
+
+          ## Install uv
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+
+          #Load data into DynamoDB tables
+          /root/.local/bin/uv run --with boto3 --with dynamodb_json python create_tables.py --mode load
+          
+          # Start ingestion job for the data source
+          echo "####################################################################################################"
+          echo "Starting ingestion job for data source synchronization"
+          
+          INGESTION_JOB_ID=$(aws bedrock-agent start-ingestion-job \
+            --knowledge-base-id "$KB_ID" \
+            --data-source-id "$DS_ID" \
+            --query 'ingestionJob.ingestionJobId' \
+            --output text)
+          
+          if [ -z "$INGESTION_JOB_ID" ] || [ "$INGESTION_JOB_ID" = "None" ]; then
+            echo "Failed to start ingestion job"
+          fi
+          
+          echo "Ingestion job started with ID: $INGESTION_JOB_ID"
+          # Don't wait for ingestion to complete
+          
+          # Install SSM Agent (if not already installed)
+          echo "####################################################################################################"
+          echo "Ensuring SSM Agent is installed and running"
+          dnf install -y amazon-ssm-agent
+          systemctl enable amazon-ssm-agent
+          systemctl start amazon-ssm-agent
+  
+Outputs:
+  RetailBucketName:
+    Description: 'Name of the retail S3 bucket'
+    Value: !Ref RetailBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-RetailBucket'
+
+  ProductInventoryTableName:
+    Description: 'Name of the product inventory DynamoDB table'
+    Value: !Ref ProductInventoryTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ProductInventoryTable'
+
+  ProductReviewsTableName:
+    Description: 'Name of the product reviews DynamoDB table'
+    Value: !Ref ProductReviewsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ProductReviewsTable'
+
+  VSCodeServerURL:
+    Description: URL to access the VS Code server
+    Value: !Sub 'http://${VSCodeServerInstance.PublicDnsName}:8080/?folder=/home/ec2-user/rs-retail-agenticai-workshop-dummy'
+
+  VSCodeServerPassword:
+    Description: Password to access the VS Code server
+    Value: !Sub '${VSCodeServerPassword}-${AWS::AccountId}'
+
+  IAMRoleName:
+    Description: IAM Role attached to the VS Code server
+    Value: !Ref VSCodeServerRole
+
+  VpcId:
+    Description: ID of the VPC created for the workshop
+    Value: !Ref WorkshopVPC
+
+  PublicSubnetId:
+    Description: ID of the public subnet created for the workshop
+    Value: !Ref PublicSubnet
+
+  RetrieveProductReviewsFunctionName:
+    Description: Name of the Lambda function for retrieving product reviews
+    Value: !Ref RetrieveProductReviewsFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-RetrieveProductReviewsFunction'
+
+  RetrieveProductReviewsFunctionArn:
+    Description: ARN of the Lambda function for retrieving product reviews
+    Value: !GetAtt RetrieveProductReviewsFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RetrieveProductReviewsFunctionArn'
+
+  RetrieveProductReviewsRoleArn:
+    Description: ARN of the IAM role for the Lambda function
+    Value: !GetAtt RetrieveProductReviewsRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RetrieveProductReviewsRoleArn'
+
+  # ========================================
+  # SSM PARAMETER OUTPUTS
+  # ========================================
+
+  
+
+  AnyCompProductReviewsMcpServerUrlParameterName:
+    Description: SSM Parameter name for AnyCompany product reviews MCP server URL
+    Value: !Ref AnyCompProductReviewsMcpServerUrlParameter
+    Export:
+      Name: !Sub '${AWS::StackName}-ProductReviewsMcpServerUrlParameter'
+
+  # ========================================
+  # COGNITO OUTPUTS
+  # ========================================
+
+  CognitoDiscoveryUrl:
+    Description: Cognito User Pool discovery URL for OIDC configuration
+    Value: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${WorkshopUserPool}/.well-known/openid-configuration'
+    Export:
+      Name: !Sub '${AWS::StackName}-CognitoDiscoveryUrl'
+
+  CognitoClientId:
+    Description: Cognito User Pool Client ID for authentication
+    Value: !Ref WorkshopUserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-CognitoClientId'
+
+  BedrockAgentCoreRoleName:
+    Description: Name of the IAM role for Bedrock AgentCore Gateway
+    Value: !Ref BedrockAgentCoreRole
+    Export:
+      Name: !Sub '${AWS::StackName}-BedrockAgentCoreRoleName'
+
