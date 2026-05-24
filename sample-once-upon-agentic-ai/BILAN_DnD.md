@@ -16,6 +16,10 @@ Ce workshop couvre la création d'agents IA avec le **SDK Strands** (AWS), en ci
 | **A2A** | Agent-to-Agent — communication entre agents distincts via HTTP |
 | **LLM Provider** | Fournisseur du modèle (ici AWS Bedrock, modèle Mistral / Sonnet 4.5) |
 | **System Prompt** | Instruction de rôle donnée à l'agent à l'initialisation |
+| **callback_handler** | Fonction appelée à chaque événement du cycle de vie de l'agent |
+| **stream_async** | Méthode de l'agent retournant un async generator pour streamer la réponse |
+| **BedrockModel** | Classe Strands encapsulant un modèle Bedrock avec ses paramètres fins |
+| **BotocoreConfig** | Config boto3 pour les retries, timeouts, etc. |
 
 ---
 
@@ -50,6 +54,114 @@ logging.basicConfig(
 ```
 
 > Permet de voir le raisonnement interne de l'agent (chain-of-thought, appels d'outils).
+> Pour désactiver : repasser à `logging.ERROR`
+
+### Notion : Agent avec modèle personnalisé et `BotocoreConfig`
+
+```python
+from strands.models import BedrockModel
+from botocore.config import Config as BotocoreConfig
+
+boto_config = BotocoreConfig(
+    retries={"max_attempts": 2, "mode": "standard"},
+    connect_timeout=5,
+    read_timeout=30
+)
+
+bedrock_model = BedrockModel(
+    model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    region_name=region,
+    temperature=0.3,
+    boto_client_config=boto_config,   # PAS directement dans BedrockModel
+)
+
+agent = Agent(model=bedrock_model)
+```
+
+**Points importants :**
+- On peut aussi passer l'ID directement : `Agent(model="us.anthropic.claude-haiku-...")`
+- `BotocoreConfig` se passe via `boto_client_config`, pas directement à `BedrockModel`
+- Claude Haiku ne supporte pas `temperature` ET `top_p` simultanément
+
+### Notion : Métriques d'observabilité
+
+```python
+response = agent("Tell me about agentic AI")
+print(response.metrics.get_summary())   # tokens, latence, nb d'appels d'outils
+```
+
+---
+
+## Chapitre 1 bis — Streaming (`1_strands_basics/`)
+
+### Notion : Streaming avec async iterators (`1g`)
+
+```python
+import asyncio
+from strands import Agent
+
+async_iter_agent = Agent(
+    tools=[calculator],
+    callback_handler=None   # ⚠️ désactiver pour éviter le double affichage
+)
+
+async def process_streaming_response():
+    agent_stream = async_iter_agent.stream_async("What is 25 * 48?")
+
+    async for event in agent_stream:
+        if "data" in event:
+            print(event["data"], end="", flush=True)
+        elif "current_tool_use" in event and event["current_tool_use"].get("name"):
+            print(f"\n[Tool: {event['current_tool_use']['name']}]")
+
+asyncio.run(process_streaming_response())
+# En Jupyter : await process_streaming_response()  (pas asyncio.run)
+```
+
+**Points importants :**
+- `stream_async()` retourne un **async generator** — chaque `event` est un dict
+- Clés utiles : `"data"` (texte), `"current_tool_use"` (outil en cours)
+- `callback_handler=None` est obligatoire pour le contrôle manuel du stream
+
+### Notion : Streaming avec callback_handler (`1h`)
+
+```python
+def event_loop_tracker(**kwargs):
+    if kwargs.get("init_event_loop"):    print("Event loop initialized")
+    elif kwargs.get("start_event_loop"): print("Event loop cycle starting")
+    elif kwargs.get("start"):            print("New cycle started")
+    elif "message" in kwargs:            print(f"New message: {kwargs['message']['role']}")
+    elif kwargs.get("complete"):         print("Cycle completed")
+    elif kwargs.get("force_stop"):       print(f"Force stop: {kwargs.get('force_stop_reason')}")
+
+    if "current_tool_use" in kwargs and kwargs["current_tool_use"].get("name"):
+        print(f"Using tool: {kwargs['current_tool_use']['name']}")
+
+    if "data" in kwargs:
+        print(kwargs["data"], end="", flush=True)
+
+agent = Agent(
+    tools=[calculator],
+    callback_handler=event_loop_tracker
+)
+agent("What is 42+7?")   # appel SYNCHRONE (pas de stream_async)
+```
+
+**Phases du cycle de vie (kwargs clés) :**
+| Clé | Phase |
+|---|---|
+| `init_event_loop` | Initialisation |
+| `start_event_loop` | Début d'un cycle |
+| `start` | Nouveau cycle |
+| `message` | Message créé (contient `role`) |
+| `complete` | Cycle terminé |
+| `force_stop` | Arrêt forcé (contient `force_stop_reason`) |
+| `data` | Chunk de texte |
+| `current_tool_use` | Outil en cours (contient `name`) |
+
+**Différence async vs callback :**
+- **Async iterator** : `stream_async()` + `async for` + `callback_handler=None` → contrôle total, asynchrone
+- **Callback** : `callback_handler=ma_fonction` + appel synchrone → plus simple, même thread
 
 ---
 
@@ -72,6 +184,10 @@ agent("Using https://en.wikipedia.org/wiki/Dungeons_%26_Dragons tell me the desi
 - `http_request` — requêtes HTTP / scraping web
 - `python_repl` — exécution de code Python à la volée
 - `file_write` — écriture de fichiers sur le disque
+- `calculator` — calculs mathématiques
+- `current_time` — heure courante
+- `retrieve` — interrogation d'une Knowledge Base Bedrock
+- `use_aws` — appels API AWS génériques (DynamoDB, S3, Lambda…)
 
 ### Notion : Combiner plusieurs outils
 
@@ -118,7 +234,7 @@ dice_master = Agent(
 
 **Règles du décorateur `@tool` :**
 - La **docstring** est obligatoire — l'agent l'utilise pour savoir quand et comment appeler l'outil
-- Le typage des arguments (`faces: int`) est transmis à l'agent
+- Le typage des arguments (`faces: int`) est transmis à l'agent via le schéma JSON
 - La fonction peut lever des exceptions : l'agent les gère
 
 ---
@@ -180,10 +296,28 @@ with streamable_http_mcp_client as mcp:
 ```
 
 **Points clés MCP :**
-- `MCPClient(transport_factory)` — le transport est une fonction qui retourne la connexion
+- `MCPClient(transport_factory)` — le transport est une **fonction lambda** qui retourne la connexion
 - Le `with` statement gère le cycle de vie de la connexion
 - `list_tools_sync()` découvre dynamiquement les outils disponibles côté serveur
 - L'agent reçoit les outils MCP exactement comme des outils locaux
+- On peut mélanger outils locaux et MCP : `tools=local_tools + mcp_tools`
+
+### Notion : MCP avec authentification Cognito (AgentCore Gateway)
+
+```python
+from mcp.client.streamable_http import streamablehttp_client  # ⚠️ sans underscore dans certaines versions
+
+mcp_client = MCPClient(lambda: streamablehttp_client(
+    agentcore_mcp_gatewayURL,
+    headers={"Authorization": f"Bearer {cognito_access_token}"}  # token Cognito
+))
+
+with mcp_client:
+    mcp_tools = mcp_client.list_tools_sync()
+    agent = Agent(tools=[mon_tool_local] + mcp_tools)  # mix local + MCP
+```
+
+> ⚠️ **Piège** : `streamable_http_client` (avec underscore) vs `streamablehttp_client` (sans underscore) — les deux existent selon la version, vérifier l'import.
 
 ---
 
@@ -228,10 +362,8 @@ from strands_tools.a2a_client import A2AClientToolProvider
 from strands.tools.mcp.mcp_client import MCPClient
 from mcp.client.streamable_http import streamable_http_client
 
-# Connexion au serveur MCP de dés
 mcp_client = MCPClient(lambda: streamable_http_client("http://localhost:8082/mcp"))
 
-# Découverte des agents A2A connus
 A2A_AGENT_URLS = ["http://127.0.0.1:8000", "http://127.0.0.1:8001"]
 provider = A2AClientToolProvider(known_agent_urls=A2A_AGENT_URLS)
 
@@ -245,11 +377,11 @@ with mcp_client:
     )
 ```
 
-**Points clés A2A :**
-- `A2AServer(agent, port)` → expose l'agent sur le réseau
-- `A2AClientToolProvider(known_agent_urls=[...])` → génère des "outils" pour contacter les agents distants
-- `provider.tools` contient `a2a_list_discovered_agents` et `a2a_send_message`
-- Les outils MCP et A2A se combinent simplement : `tools=mcp_tools + provider.tools`
+**Outils fournis par `provider.tools` :**
+- `a2a_list_discovered_agents` — liste les agents A2A disponibles avec leurs URLs
+- `a2a_send_message` — envoie un message à un agent A2A via son URL
+
+> ⚠️ **Piège** : toujours appeler `a2a_list_discovered_agents` AVANT `a2a_send_message` pour obtenir les vraies URLs. Ne jamais inventer ou hardcoder une URL dans le system prompt.
 
 ### Notion : Exposer l'orchestrateur via FastAPI
 
@@ -271,6 +403,19 @@ if __name__ == "__main__":
 
 ---
 
+## Comparatif A2A vs @tool (orchestration)
+
+| Critère | A2A (`A2AServer` / `A2AClientToolProvider`) | `@tool` wrapping |
+|---|---|---|
+| **Déploiement** | Chaque agent = processus séparé sur un port | Tous les agents = même processus Python |
+| **Communication** | HTTP entre processus | Appel de fonction local |
+| **Scalabilité** | Agents indépendants, scalables séparément | Couplé, tout tombe ensemble |
+| **Complexité** | Plus complexe (ports, réseau) | Plus simple (imports Python) |
+| **Ordre démarrage** | 4 terminaux séparés | 1 seul script |
+| **Exemple workshop** | "Once Upon Agentic AI" chap. 5 | Retail CPG Lab 4 |
+
+---
+
 ## Récapitulatif des imports essentiels
 
 ```python
@@ -281,27 +426,50 @@ from strands import Agent
 from strands import tool
 
 # Outils built-in
-from strands_tools import http_request, python_repl, file_write
+from strands_tools import http_request, python_repl, file_write, calculator
+from strands_tools import retrieve, use_aws   # KB et AWS APIs
+
+# Modèle avec paramètres fins
+from strands.models import BedrockModel
+from botocore.config import Config as BotocoreConfig
 
 # MCP — serveur
 from mcp.server import FastMCP
 
-# MCP — client
-from mcp.client.streamable_http import streamable_http_client
+# MCP — client (⚠️ deux variantes selon version)
+from mcp.client.streamable_http import streamable_http_client    # avec underscore
+from mcp.client.streamable_http import streamablehttp_client     # sans underscore (obsolete mais utilisé)
 from strands.tools.mcp.mcp_client import MCPClient
+from strands.tools.mcp import MCPClient                          # alias court
 
 # A2A — serveur agent
 from strands.multiagent.a2a import A2AServer
 
 # A2A — client orchestrateur
 from strands_tools.a2a_client import A2AClientToolProvider
+
+# FastAPI (exposition HTTP)
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+import uvicorn
 ```
 
 ---
 
-## Ordre de démarrage des services
+## Clients boto3 distincts — tableau récapitulatif
 
-Pour faire tourner l'architecture complète du chapitre 5 :
+| Client | Import | Utilisé pour |
+|---|---|---|
+| `boto3.client('bedrock')` | — | Créer/lister les guardrails |
+| `boto3.client('bedrock-runtime')` | — | Tester un guardrail (`apply_guardrail`), invoquer un modèle |
+| `boto3.client('ssm')` | — | Lire/écrire dans SSM Parameter Store |
+| `boto3.Session().region_name` | — | Récupérer la région AWS courante |
+
+> ⚠️ **Piège** : `bedrock` et `bedrock-runtime` sont deux clients **différents**. `bedrock` = plan de contrôle (créer des ressources). `bedrock-runtime` = plan de données (appeler le modèle, tester guardrail).
+
+---
+
+## Ordre de démarrage des services (Chapitre 5)
 
 ```bash
 # Terminal 1 — Serveur MCP de dés

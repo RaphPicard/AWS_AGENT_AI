@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QCM — Strands SDK & AWS Agentic AI</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e8eaf0; min-height: 100vh; padding: 20px 16px 50px; }
+h1 { text-align: center; font-size: 21px; font-weight: 600; color: #fff; margin-bottom: 3px; }
+.subtitle { text-align: center; font-size: 12px; color: #4b5563; margin-bottom: 16px; }
+.kbd { display: inline-block; background: #1e2235; border: 1px solid #374151; border-radius: 4px; padding: 1px 5px; font-size: 11px; color: #6b7280; font-family: monospace; }
+
+.top-bar { display: flex; justify-content: center; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.filter-bar { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-bottom: 12px; }
+.filter-btn { padding: 4px 11px; border-radius: 20px; border: 1px solid #2d3244; background: #1a1d2e; color: #9ca3af; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+.filter-btn:hover { border-color: #4f6ef7; color: #c7d0ff; }
+.filter-btn.active { background: #4f6ef7; border-color: #4f6ef7; color: #fff; font-weight: 500; }
+
+.stats-bar { display: flex; justify-content: center; gap: 20px; margin-bottom: 12px; font-size: 12px; color: #6b7280; }
+.stats-bar strong { color: #e8eaf0; }
+.progress-wrap { max-width: 720px; margin: 0 auto 16px; height: 3px; background: #1e2235; border-radius: 2px; overflow: hidden; }
+.progress-bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+.pb-neutral { background: linear-gradient(90deg, #4f6ef7, #818cf8); }
+.pb-ok { background: #22c55e; }
+.pb-ko { background: #ef4444; }
+
+.q-card { max-width: 720px; margin: 0 auto 20px; background: #1a1d2e; border: 1px solid #2d3244; border-radius: 16px; padding: 24px 26px; }
+.q-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.q-num { font-size: 11px; color: #4b5563; font-weight: 500; }
+.q-cat { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 9px; border-radius: 20px; }
+.cat-fondamentaux { background: #1e3a5f; color: #60a5fa; }
+.cat-outils { background: #1e3d2f; color: #34d399; }
+.cat-mcp { background: #3d2a5f; color: #c084fc; }
+.cat-a2a { background: #5f2a2a; color: #f87171; }
+.cat-guardrails { background: #5f3a1a; color: #fb923c; }
+.cat-kb { background: #1e3d3d; color: #2dd4bf; }
+.cat-orchestration { background: #3d1e3d; color: #e879f9; }
+.cat-pièges { background: #5f1a1a; color: #fca5a5; }
+.cat-code { background: #1a2e1a; color: #86efac; }
+
+.q-text { font-size: 15px; font-weight: 500; color: #e8eaf0; line-height: 1.5; margin-bottom: 16px; }
+.q-code { background: #0f1935; border: 1px solid #1e3060; border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #a5f3fc; font-family: 'Courier New', monospace; white-space: pre; overflow-x: auto; margin-bottom: 16px; line-height: 1.5; }
+
+.options { display: flex; flex-direction: column; gap: 8px; }
+.opt { padding: 11px 16px; border-radius: 10px; border: 1px solid #2d3244; background: #12151f; cursor: pointer; font-size: 13px; color: #c8d6f0; transition: all 0.15s; display: flex; align-items: flex-start; gap: 10px; }
+.opt:hover:not(.disabled) { border-color: #4f6ef7; background: #1a1d35; }
+.opt .letter { min-width: 22px; height: 22px; border-radius: 50%; background: #1e2235; border: 1px solid #374151; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #6b7280; flex-shrink: 0; }
+.opt.selected { border-color: #4f6ef7; background: #1a1d35; }
+.opt.selected .letter { background: #4f6ef7; border-color: #4f6ef7; color: #fff; }
+.opt.correct { border-color: #22c55e; background: #052e16; }
+.opt.correct .letter { background: #22c55e; border-color: #22c55e; color: #fff; }
+.opt.wrong { border-color: #ef4444; background: #2d0a0a; }
+.opt.wrong .letter { background: #ef4444; border-color: #ef4444; color: #fff; }
+.opt.disabled { cursor: default; }
+
+.explication { display: none; margin-top: 14px; padding: 14px 16px; background: #0f1935; border: 1px solid #1e3060; border-radius: 10px; font-size: 13px; line-height: 1.65; color: #c8d6f0; }
+.explication.visible { display: block; }
+.explication code { background: #0a0f1e; border: 1px solid #1e3060; padding: 1px 5px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; color: #7dd3fc; }
+.explication strong { color: #e8eaf0; }
+.exp-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.exp-ok { color: #22c55e; }
+.exp-ko { color: #ef4444; }
+
+.q-actions { display: flex; justify-content: flex-end; margin-top: 14px; gap: 8px; }
+.btn-validate { padding: 9px 22px; background: #4f6ef7; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+.btn-validate:hover { background: #4060e8; }
+.btn-validate:disabled { opacity: 0.3; cursor: default; }
+.btn-next { padding: 9px 22px; background: #1e2235; border: 1px solid #374151; border-radius: 8px; color: #9ca3af; font-size: 13px; cursor: pointer; display: none; transition: all 0.15s; }
+.btn-next:hover { border-color: #4f6ef7; color: #a5b4fc; }
+.btn-next.visible { display: block; }
+.kbd-hint { text-align: center; font-size: 11px; color: #374151; margin-bottom: 14px; }
+
+.score-screen { display: none; max-width: 720px; margin: 0 auto; background: #1a1d2e; border: 1px solid #2d3244; border-radius: 16px; padding: 36px; text-align: center; }
+.score-screen.visible { display: block; }
+.score-big { font-size: 56px; font-weight: 700; }
+.score-green { color: #22c55e; }
+.score-orange { color: #f59e0b; }
+.score-red { color: #ef4444; }
+.score-sub { font-size: 14px; color: #9ca3af; margin-bottom: 20px; }
+.score-row { display: flex; justify-content: center; gap: 28px; margin-bottom: 20px; }
+.score-cell { font-size: 12px; color: #6b7280; }
+.score-cell strong { display: block; font-size: 22px; font-weight: 600; }
+.score-cell.ok strong { color: #22c55e; }
+.score-cell.ko strong { color: #ef4444; }
+.score-msg { font-size: 15px; font-weight: 500; color: #e8eaf0; margin-bottom: 24px; padding: 12px 20px; background: #12151f; border-radius: 10px; }
+.btn-restart { padding: 11px 28px; background: #4f6ef7; border: none; border-radius: 10px; color: #fff; font-size: 14px; font-weight: 500; cursor: pointer; margin: 4px; }
+.btn-restart:hover { background: #4060e8; }
+.btn-restart-ko { padding: 11px 28px; background: #7f1d1d; border: none; border-radius: 10px; color: #fca5a5; font-size: 14px; font-weight: 500; cursor: pointer; margin: 4px; }
+.btn-restart-ko:hover { background: #991b1b; }
+
+.cat-breakdown { margin: 16px 0 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.cat-cell { background: #12151f; border: 1px solid #2d3244; border-radius: 8px; padding: 8px 12px; font-size: 12px; }
+.cat-cell .cat-name { color: #6b7280; margin-bottom: 4px; }
+.cat-cell .cat-score { font-weight: 600; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>QCM — Strands SDK & AWS Agentic AI</h1>
+<p class="subtitle">100 questions · style partiel · correction détaillée immédiate</p>
+<p class="kbd-hint"><span class="kbd">A</span><span class="kbd">B</span><span class="kbd">C</span><span class="kbd">D</span> choisir · <span class="kbd">Entrée</span> valider / suivant</p>
+
+<div class="filter-bar" id="filterBar"></div>
+<div class="stats-bar">
+  <span>Q <strong id="statQ">1</strong>/<strong id="statTotal">0</strong></span>
+  <span>✓ <strong id="statOk" style="color:#22c55e">0</strong></span>
+  <span>✗ <strong id="statKo" style="color:#ef4444">0</strong></span>
+  <span>Score <strong id="statPct">–</strong></span>
+</div>
+<div class="progress-wrap"><div class="progress-bar pb-neutral" id="progressBar" style="width:0%"></div></div>
+
+<div id="qArea"></div>
+<div class="score-screen" id="scoreScreen"></div>
+
+<script>
+const ALL_QUESTIONS = [
+  {cat:"fondamentaux", q:"Quelle est la syntaxe minimale pour créer et appeler un agent Strands ?", opts:["Agent(model='bedrock').run('question')", "Agent()('question')", "Agent.create().invoke('question')", "StrandsAgent(prompt='question').execute()"], ans:1, exp:"La syntaxe minimale est <code>agent = Agent()</code> puis <code>agent('question')</code>. L'agent est appelé comme une fonction Python classique."},
+  {cat:"fondamentaux", q:"Quel paramètre de BedrockModel permet de passer une configuration boto3 (retries, timeouts) ?", opts:["boto_config", "boto_client_config", "botocore_settings", "client_config"], ans:1, exp:"Le paramètre est <code>boto_client_config</code> qui accepte un objet <code>BotocoreConfig</code>. Ne pas confondre avec <code>boto_config</code> (n'existe pas)."},
+  {cat:"fondamentaux", q:"Claude Haiku supporte-t-il temperature ET top_p simultanément dans BedrockModel ?", opts:["Oui, les deux sont supportés", "Non, il faut commenter l'un des deux", "Oui, mais seulement si temperature < 0.5", "Non, aucun des deux n'est supporté"], ans:1, exp:"Claude Haiku ne supporte pas <code>temperature</code> ET <code>top_p</code> en même temps. Il faut commenter l'un des deux dans le <code>BedrockModel</code>. Les autres modèles comme Nova Premier supportent les deux."},
+  {cat:"fondamentaux", q:"Pour activer les logs de debug Strands, quelle est la bonne ligne de code ?", opts:["Agent.debug(True)", "logging.getLogger('strands').setLevel(logging.DEBUG)", "strands.set_log_level('DEBUG')", "Agent(verbose=True)"], ans:1, exp:"<code>logging.getLogger('strands').setLevel(logging.DEBUG)</code> est la bonne syntaxe. Il faut aussi appeler <code>logging.basicConfig(...)</code> pour configurer le format et le handler."},
+  {cat:"fondamentaux", q:"À quel moment faut-il configurer les logs de debug par rapport à la création de l'agent ?", opts:["Après la création de l'agent", "Avant la création de l'agent", "L'ordre n'a pas d'importance", "Pendant la création de l'agent via un paramètre"], ans:1, exp:"Les logs doivent être configurés <strong>avant</strong> la création de l'agent pour capturer toute l'initialisation, y compris la configuration du modèle."},
+  {cat:"fondamentaux", q:"Que retourne response.metrics.get_summary() ?", opts:["Un string avec la réponse résumée", "Un dict JSON avec tokens, latence et nb d'appels d'outils", "Une liste des outils utilisés", "Le nombre de tokens uniquement"], ans:1, exp:"<code>response.metrics.get_summary()</code> retourne un dictionnaire JSON contenant les tokens d'entrée/sortie, la latence totale et le nombre d'appels d'outils effectués. Utile pour estimer les coûts Bedrock."},
+  {cat:"fondamentaux", q:"Quelle est la différence principale entre stream_async() et l'utilisation de callback_handler ?", opts:["stream_async est synchrone, callback_handler est asynchrone", "stream_async nécessite async/await, callback_handler est synchrone", "Les deux sont synchrones, stream_async est juste plus rapide", "stream_async retourne tout d'un coup, callback_handler est incrémental"], ans:1, exp:"<code>stream_async()</code> utilise <code>async/await</code> avec <code>async for event in agent.stream_async(q)</code>. Le <code>callback_handler</code> est une fonction synchrone appelée à chaque événement, l'agent étant invoqué normalement avec <code>agent('msg')</code>."},
+  {cat:"fondamentaux", q:"Pourquoi faut-il passer callback_handler=None quand on utilise stream_async() ?", opts:["Pour améliorer les performances", "Pour éviter le double affichage du texte", "Pour désactiver les appels d'outils", "Ce n'est pas nécessaire"], ans:1, exp:"Sans <code>callback_handler=None</code>, le handler par défaut de Strands s'active en même temps que le <code>async for</code>, ce qui produit un <strong>double affichage</strong> du texte dans le terminal."},
+  {cat:"fondamentaux", q:"Comment lancer une coroutine Python dans un script classique (non-Jupyter) ?", opts:["await ma_coroutine()", "asyncio.run(ma_coroutine())", "async.execute(ma_coroutine())", "coroutine.run(ma_coroutine())"], ans:1, exp:"Dans un script Python classique, on utilise <code>asyncio.run(ma_coroutine())</code> qui crée un event loop, exécute la coroutine, puis le ferme. Dans Jupyter, un event loop est déjà actif, donc on utilise directement <code>await</code>."},
+  {cat:"fondamentaux", q:"Quelle clé kwargs du callback_handler contient le chunk de texte généré ?", opts:["'text'", "'content'", "'data'", "'output'"], ans:2, exp:"La clé <code>'data'</code> contient le chunk de texte généré en temps réel. La clé <code>'current_tool_use'</code> contient les infos sur l'outil en cours (avec 'name')."},
+  {cat:"fondamentaux", q:"Que contient kwargs['current_tool_use'] dans un callback_handler ?", opts:["Le résultat retourné par l'outil", "Un dict avec au moins la clé 'name' de l'outil en cours", "La liste de tous les outils disponibles", "Le code source de l'outil"], ans:1, exp:"<code>kwargs['current_tool_use']</code> est un dict contenant au moins <code>'name'</code> (le nom de l'outil en cours d'utilisation). On vérifie <code>kwargs['current_tool_use'].get('name')</code> pour savoir quel outil est appelé."},
+  {cat:"fondamentaux", q:"Que fait le préfixe 'us.' dans model_id='us.anthropic.claude-haiku-...' ?", opts:["Indique que le modèle est en anglais américain", "Active le routage cross-region AWS (load balancing US)", "Restreint l'accès aux seuls utilisateurs américains", "Sélectionne la région us-east-1 spécifiquement"], ans:1, exp:"Le préfixe <code>us.</code> active le <strong>routage cross-region</strong> AWS, permettant à Bedrock de distribuer les requêtes sur plusieurs régions US automatiquement pour la disponibilité et le load balancing."},
+  {cat:"outils", q:"Quelle est la règle la plus importante pour le décorateur @tool ?", opts:["Le nom de la fonction doit commencer par 'tool_'", "La docstring est obligatoire", "La fonction doit retourner un dict", "Le typage des paramètres est optionnel"], ans:1, exp:"La <strong>docstring est obligatoire</strong> car l'agent LLM l'utilise pour décider quand et comment appeler l'outil. Sans docstring, l'agent ne sait pas à quoi sert l'outil. Le typage (<code>param: str</code>) est aussi très important car il est transmis au LLM via le schéma JSON."},
+  {cat:"outils", q:"Qui décide quel outil appeler dans un agent Strands ?", opts:["Le développeur, via agent.call_tool('nom')", "L'agent (LLM) lui-même, en fonction du contexte", "Le système de règles défini dans BotocoreConfig", "L'orchestrateur externe"], ans:1, exp:"C'est l'<strong>agent (LLM) lui-même</strong> qui décide quel outil utiliser en analysant le contexte du message et les docstrings des outils disponibles. Le développeur ne contrôle pas directement cet appel."},
+  {cat:"outils", q:"Quel outil built-in permet d'exécuter du code Python à la volée ?", opts:["code_runner", "python_repl", "exec_python", "code_eval"], ans:1, exp:"<code>from strands_tools import python_repl</code>. Cet outil permet à l'agent d'exécuter du code Python directement, par exemple pour calculer ou générer des fichiers dynamiquement (comme dans le bonus_quest.py)."},
+  {cat:"outils", q:"Quel outil built-in Strands permet d'interroger une Knowledge Base Amazon Bedrock ?", opts:["knowledge_base", "bedrock_query", "retrieve", "kb_search"], ans:2, exp:"<code>from strands_tools import retrieve</code>. C'est l'outil built-in qui encapsule l'API Amazon Bedrock Knowledge Base pour la recherche sémantique dans des documents."},
+  {cat:"outils", q:"Quel outil built-in permet d'appeler n'importe quelle API AWS (DynamoDB, S3, Lambda…) ?", opts:["aws_api", "use_aws", "boto_tool", "aws_caller"], ans:1, exp:"<code>from strands_tools import use_aws</code>. Cet outil encapsule l'ensemble des APIs AWS, gère automatiquement l'authentification et retourne des réponses structurées."},
+  {cat:"outils", q:"Que fait la variable d'environnement BYPASS_TOOL_CONSENT=true ?", opts:["Désactive les guardrails Bedrock", "Désactive la demande de confirmation avant chaque appel d'outil", "Active le mode administrateur Strands", "Désactive les logs de l'agent"], ans:1, exp:"<code>BYPASS_TOOL_CONSENT=true</code> désactive la demande de confirmation interactive avant chaque appel d'outil. Sans cela, Strands demande 'oui/non' dans le terminal avant chaque tool call. À redéfinir à chaque nouveau terminal."},
+  {cat:"outils", q:"Comment appeler use_aws de façon programmatique (sans passer par le LLM) ?", opts:["aws_agent('appelle DynamoDB get_item')", "aws_agent.tool.use_aws(service_name=..., operation_name=..., parameters=...)", "use_aws.call(service='dynamodb', op='get_item')", "Agent.aws_call('dynamodb', 'get_item', {...})"], ans:1, exp:"On crée un <code>aws_agent = Agent(tools=[use_aws])</code> puis on appelle directement <code>aws_agent.tool.use_aws(...)</code>. C'est un appel <strong>programmatique direct</strong> qui bypass le LLM — utile pour des opérations déterministes."},
+  {cat:"outils", q:"Quel est le type DynamoDB correct pour une valeur String dans une clé ?", opts:["{\"type\": \"string\", \"value\": \"abc\"}", "{\"S\": \"abc\"}", "{\"String\": \"abc\"}", "\"abc\""], ans:1, exp:"DynamoDB utilise une notation typée : <code>{\"S\": valeur}</code> pour String, <code>{\"N\": \"42\"}</code> pour Number (attention : la valeur Number est une string JSON), <code>{\"BOOL\": true}</code> pour Boolean."},
+  {cat:"kb", q:"Quelle est la structure correcte du dict toolUseId à passer à retrieve.retrieve() ?", opts:["{'text': query, 'kb_id': id, 'n': 3}", "{'toolUseId': 'id', 'input': {'text': query, 'knowledgeBaseId': id, 'region': r, 'numberOfResults': 3, 'score': 0.4}}", "{'query': query, 'knowledgeBase': id, 'maxResults': 3}", "retrieve.search(query=q, kb=id)"], ans:1, exp:"La structure exacte est <code>{'toolUseId': 'mon_id', 'input': {'text': q, 'knowledgeBaseId': kb_id, 'region': region, 'numberOfResults': 3, 'score': 0.4}}</code>. C'est la structure attendue par <code>retrieve.retrieve(tool_use)</code>."},
+  {cat:"kb", q:"Que signifie score=0.4 dans un appel retrieve ?", opts:["Le nombre minimum de résultats", "Le seuil de similarité cosinus minimum (0-1)", "La version de l'API Knowledge Base", "Le timeout en secondes"], ans:1, exp:"<code>score=0.4</code> est le <strong>seuil de similarité cosinus</strong> minimum. Un chunk de document doit avoir un score >= 0.4 pour être retourné. En dessous, il est rejeté. Plus le score est élevé, plus les résultats sont précis mais moins nombreux."},
+  {cat:"kb", q:"Comment vérifier le succès d'un appel retrieve et extraire le texte ?", opts:["result.text si result.ok", "if result['status'] == 'success': return result['content'][0]['text']", "result.get_content() if result.success", "result['data']['text'] if not result['error']"], ans:1, exp:"La bonne syntaxe : <code>if result['status'] == 'success': return result['content'][0]['text']</code>. En cas d'erreur, accéder à <code>result['content'][0]['text']</code> pour le message d'erreur."},
+  {cat:"kb", q:"Où doit-on stocker le Knowledge Base ID dans ces workshops ?", opts:["Dans une variable d'environnement", "Dans SSM Parameter Store", "Dans un fichier .env", "Dans le code directement (hardcodé)"], ans:1, exp:"Le Knowledge Base ID doit être dans <strong>SSM Parameter Store</strong> (AWS Systems Manager). On le récupère avec <code>ssm.get_parameter(Name='faq_kb_id')['Parameter']['Value']</code>. Jamais hardcodé dans le code."},
+  {cat:"kb", q:"Quel lab crée le FAQ Agent en no-code (sans Python) ?", opts:["Lab 0 fundamentals", "Lab 1a (console AWS)", "Lab 1b (Strands SDK)", "Lab 2 (Product Search)"], ans:1, exp:"Le <strong>Lab 1a</strong> se fait entièrement via la console AWS (Amazon Bedrock > Agents > Create Agent). Le Lab 1b utilise le SDK Strands avec Python. Le Knowledge Base ID créé en 1a est réutilisé en 1b."},
+  {cat:"mcp", q:"Que signifie MCP ?", opts:["Multi-Cloud Protocol", "Model Context Protocol", "Message Control Plane", "Managed Container Protocol"], ans:1, exp:"MCP = <strong>Model Context Protocol</strong>. C'est un standard pour exposer des outils sur un serveur HTTP, permettant à des agents de découvrir et d'utiliser des outils distants de manière standardisée."},
+  {cat:"mcp", q:"Quel transport utilise FastMCP dans ces workshops ?", opts:["websocket", "grpc", "streamable-http", "rest-json"], ans:2, exp:"<code>mcp.run(transport='streamable-http')</code> est le transport utilisé. Il expose le serveur sur un port HTTP avec support du streaming."},
+  {cat:"mcp", q:"Comment récupérer la liste des outils d'un serveur MCP de façon synchrone ?", opts:["client.get_tools()", "client.list_tools_sync()", "client.discover_tools()", "client.tools"], ans:1, exp:"<code>mcp_tools = client.list_tools_sync()</code> retourne la liste des outils disponibles sur le serveur MCP. Cette méthode doit être appelée à l'intérieur du bloc <code>with client:</code>."},
+  {cat:"mcp", q:"Pourquoi l'appel agent() doit-il être dans le bloc 'with mcp_client:' ?", opts:["Pour des raisons de performance uniquement", "Car la connexion HTTP est active uniquement dans ce contexte", "Car c'est une exigence du décorateur @tool", "Pour que les variables d'environnement soient accessibles"], ans:1, exp:"La connexion MCP est ouverte à l'entrée du bloc <code>with</code> et fermée à la sortie. Si l'agent essaie d'appeler un outil MCP en dehors du <code>with</code>, la connexion est fermée → erreur de connexion."},
+  {cat:"mcp", q:"Comment passer un token d'authentification Cognito à un client MCP ?", opts:["MCPClient(token=cognito_token, url=url)", "streamablehttp_client(url, headers={'Authorization': f'Bearer {token}'})", "MCPClient(lambda: url, auth=token)", "MCPClient.with_auth(url, bearer=token)"], ans:1, exp:"Le token Cognito s'injecte dans le header HTTP : <code>streamablehttp_client(url, headers={'Authorization': f'Bearer {token}'})</code>. C'est la méthode utilisée pour s'authentifier auprès d'AgentCore Gateway."},
+  {cat:"mcp", q:"Peut-on combiner des outils MCP et des outils @tool locaux dans le même agent ?", opts:["Non, il faut deux agents séparés", "Oui, en additionnant les listes : tools=[local_tool] + mcp_tools", "Oui, mais les outils locaux doivent être déclarés après les MCP", "Non, les types d'outils sont incompatibles"], ans:1, exp:"Oui ! <code>tools=[mon_outil_local] + mcp_tools</code> fonctionne parfaitement. L'agent traite les outils locaux et MCP de façon identique."},
+  {cat:"mcp", q:"Quel est le rôle d'AgentCore Gateway dans le workshop Retail CPG ?", opts:["C'est un serveur MCP local géré par le développeur", "C'est un proxy AWS managé qui gère l'authentification Cognito et route vers Lambda", "C'est un load balancer pour les agents Strands", "C'est l'équivalent AWS de FastMCP"], ans:1, exp:"AgentCore Gateway est un <strong>proxy AWS managé</strong> qui expose un serveur MCP avec authentification Cognito. Il route les requêtes vers une fonction Lambda (retrieve-product-reviews) qui accède à DynamoDB."},
+  {cat:"mcp", q:"Piège : quelle est la différence entre streamable_http_client et streamablehttp_client ?", opts:["Aucune différence, ce sont des alias", "Deux variantes selon la version de la lib (avec/sans underscore)", "streamable_http_client est déprécié", "streamablehttp_client est pour les serveurs locaux uniquement"], ans:1, exp:"Ce sont deux variantes du même import selon la version : <code>streamable_http_client</code> (avec underscore) est utilisé dans le workshop D&D, <code>streamablehttp_client</code> (sans underscore) dans le workshop Retail CPG. Vérifier l'import dans le fichier de référence."},
+  {cat:"a2a", q:"Que signifie A2A dans le contexte Strands ?", opts:["API-to-API", "Agent-to-Agent", "Async-to-Async", "Automation-to-Automation"], ans:1, exp:"A2A = <strong>Agent-to-Agent</strong>. C'est le protocole de communication entre agents Strands distincts, chacun tournant sur son propre port HTTP et exposant une API A2A."},
+  {cat:"a2a", q:"Quelle classe permet d'exposer un agent Strands comme serveur A2A ?", opts:["A2AAgent", "A2AServer", "AgentServer", "StrandsServer"], ans:1, exp:"<code>from strands.multiagent.a2a import A2AServer</code>. On crée ensuite <code>A2AServer(agent=agent, port=8001)</code> et on appelle <code>a2a_server.serve()</code>."},
+  {cat:"a2a", q:"Quelle classe permet à un orchestrateur de contacter des agents A2A ?", opts:["A2AClient", "A2AClientToolProvider", "AgentToolProvider", "RemoteAgentClient"], ans:1, exp:"<code>from strands_tools.a2a_client import A2AClientToolProvider</code>. On passe la liste des URLs : <code>A2AClientToolProvider(known_agent_urls=[...])</code>. Le <code>provider.tools</code> contient alors les outils pour contacter ces agents."},
+  {cat:"a2a", q:"Quels outils sont fournis par provider.tools d'un A2AClientToolProvider ?", opts:["a2a_connect et a2a_call", "a2a_list_discovered_agents et a2a_send_message", "a2a_discover et a2a_invoke", "a2a_register et a2a_query"], ans:1, exp:"<code>provider.tools</code> contient deux outils : <code>a2a_list_discovered_agents</code> (liste les agents disponibles avec leurs URLs) et <code>a2a_send_message</code> (envoie un message à un agent via son URL)."},
+  {cat:"a2a", q:"Dans quel ordre démarrer les services du workshop D&D chapitre 5 ?", opts:["Orchestrateur → Agents spécialisés → MCP", "MCP → Agents spécialisés → Orchestrateur", "Agents spécialisés → MCP → Orchestrateur", "L'ordre n'a pas d'importance"], ans:1, exp:"Ordre : 1) Serveur MCP (dice_roll), 2) Rules Agent (8000), 3) Character Agent (8001), 4) Game Master Orchestrator (8009). L'orchestrateur doit démarrer EN DERNIER car il se connecte aux agents déjà lancés."},
+  {cat:"a2a", q:"Quel est le piège à éviter avec a2a_send_message dans le system prompt ?", opts:["Ne pas mentionner les URLs dans le system prompt", "Ne jamais hardcoder ou inventer les URLs des agents", "Toujours utiliser localhost", "Ne pas utiliser a2a_send_message, préférer a2a_list_discovered_agents"], ans:1, exp:"Ne jamais hardcoder ou inventer les URLs dans le system prompt. Toujours appeler d'abord <code>a2a_list_discovered_agents</code> pour obtenir les vraies URLs, puis utiliser <code>a2a_send_message</code> avec l'URL découverte."},
+  {cat:"a2a", q:"Sur quel port tourne le Game Master Orchestrator dans le workshop D&D ?", opts:["8000", "8001", "8082", "8009"], ans:3, exp:"Le Game Master Orchestrator tourne sur le port <strong>8009</strong>. Il expose un endpoint <code>POST /inquire</code> via FastAPI. Rules Agent = 8000, Character Agent = 8001, MCP dés = 8082."},
+  {cat:"guardrails", q:"Quel client boto3 utilise-t-on pour créer un guardrail Bedrock ?", opts:["boto3.client('bedrock-runtime')", "boto3.client('bedrock')", "boto3.client('bedrock-agent')", "boto3.client('bedrock-guardrail')"], ans:1, exp:"<code>boto3.client('bedrock')</code> est le client du <strong>plan de contrôle</strong> — il sert à créer/lister/gérer les ressources Bedrock (guardrails, knowledge bases...). Ne pas confondre avec <code>bedrock-runtime</code> (plan de données)."},
+  {cat:"guardrails", q:"Quel client boto3 utilise-t-on pour tester un guardrail (apply_guardrail) ?", opts:["boto3.client('bedrock')", "boto3.client('bedrock-runtime')", "boto3.client('bedrock-agent-runtime')", "boto3.client('guardrails')"], ans:1, exp:"<code>boto3.client('bedrock-runtime')</code> est le client du <strong>plan de données</strong> — il sert à appeler les modèles et tester les guardrails avec <code>apply_guardrail()</code>. Attention au tiret dans 'bedrock-runtime'."},
+  {cat:"guardrails", q:"À quel niveau s'attache un guardrail dans un agent Strands ?", opts:["Au niveau de l'agent (paramètre de Agent())", "Au niveau du modèle (paramètre de BedrockModel)", "Au niveau de l'outil (paramètre de @tool)", "Au niveau de la session"], ans:1, exp:"Le guardrail s'attache au <strong>modèle (BedrockModel)</strong> via les paramètres <code>guardrail_id</code>, <code>guardrail_version</code> et <code>guardrail_trace</code>. Pas directement à l'agent."},
+  {cat:"guardrails", q:"Quelle valeur de response.stop_reason indique que le guardrail a bloqué ?", opts:["'blocked'", "'guardrail_intervened'", "'content_filtered'", "'guardrail_blocked'"], ans:1, exp:"<code>response.stop_reason == 'guardrail_intervened'</code> est la valeur exacte à tester. On vérifie aussi avec <code>hasattr(response, 'stop_reason')</code> avant de lire cet attribut."},
+  {cat:"guardrails", q:"Quel paramètre active les logs des règles déclenchées par un guardrail ?", opts:["guardrail_debug=True", "guardrail_trace='enabled'", "guardrail_log=True", "trace_guardrail='on'"], ans:1, exp:"<code>guardrail_trace='enabled'</code> dans BedrockModel active les logs détaillés montrant quelle règle du guardrail a été déclenchée. Très utile pour le débogage."},
+  {cat:"guardrails", q:"Dans apply_guardrail, que doit-on passer dans le paramètre 'source' ?", opts:["'REQUEST' ou 'RESPONSE'", "'INPUT' ou 'OUTPUT'", "'USER' ou 'ASSISTANT'", "'PROMPT' ou 'COMPLETION'"], ans:1, exp:"Le paramètre <code>source</code> accepte <code>'INPUT'</code> (pour tester le texte entrant) ou <code>'OUTPUT'</code> (pour tester le texte sortant). On peut les tester séparément pour diagnostiquer d'où vient le blocage."},
+  {cat:"guardrails", q:"Quelle propriété du guardrail définit le message affiché à l'utilisateur quand son INPUT est bloqué ?", opts:["blockedInputMessage", "blockedInputMessaging", "inputBlockedMessage", "inputDeniedText"], ans:1, exp:"<code>blockedInputMessaging</code> (avec -ing) définit le message affiché quand l'INPUT est bloqué. <code>blockedOutputsMessaging</code> (avec 's') pour l'OUTPUT. Attention aux noms exacts des paramètres."},
+  {cat:"guardrails", q:"Quel type de filtre guardrail bloque des sujets spécifiques comme 'HateSpeech' ?", opts:["wordPolicyConfig", "topicPolicyConfig", "contentPolicyConfig", "subjectPolicyConfig"], ans:1, exp:"<code>topicPolicyConfig</code> avec <code>topicsConfig</code> permet de définir des sujets interdits avec <code>type: 'DENY'</code>. <code>wordPolicyConfig</code> bloque des mots spécifiques, <code>contentPolicyConfig</code> filtre du contenu IA générique."},
+  {cat:"guardrails", q:"Comment vérifier si un guardrail du même nom existe déjà avant d'en créer un ?", opts:["bedrock_client.guardrail_exists(name='...')", "Lister avec list_guardrails() et chercher par name", "Les guardrails sont toujours uniques par nom", "bedrock_client.get_guardrail(name='...')"], ans:1, exp:"<code>bedrock_client.list_guardrails()</code> retourne une liste. On itère et on vérifie <code>g.get('name') == 'mon-guardrail'</code>. Bonne pratique pour éviter les doublons lors de ré-exécutions du script."},
+  {cat:"orchestration", q:"Dans le Lab 4 Retail CPG, comment les agents spécialisés communiquent-ils avec l'orchestrateur ?", opts:["Via HTTP sur des ports séparés (A2A)", "Via des imports Python et des appels de fonction @tool", "Via une file de messages SQS", "Via des appels REST directs"], ans:1, exp:"Dans le Lab 4, les agents sont des <strong>imports Python</strong>. Chaque agent spécialisé est wrappé dans un <code>@tool</code> et l'orchestrateur les appelle comme des fonctions locales. C'est différent de l'architecture A2A où chaque agent tourne sur son propre port."},
+  {cat:"orchestration", q:"Dans Orchestrator.py du Lab 4, depuis quel module est importé product_search_agent ?", opts:["from ProductAgent import product_search_agent", "from ProductSearchAgent import product_search_agent", "from lab2.search import product_search_agent", "from strands_agents import product_search_agent"], ans:1, exp:"<code>from ProductSearchAgent import product_search_agent</code>. C'est une <strong>fonction</strong> (pas un objet Agent) qui gère en interne la création de l'agent et la connexion MCP."},
+  {cat:"orchestration", q:"Quel est le rôle clé de la docstring dans un @tool qui wrappe un agent ?", opts:["Documenter le code pour les développeurs", "Indiquer à l'orchestrateur LLM quand utiliser cet agent", "Générer la documentation automatique", "Configurer les timeouts de l'appel"], ans:1, exp:"La docstring du @tool est lue par l'<strong>orchestrateur LLM</strong> pour décider quel agent appeler selon la requête. C'est le mécanisme de routing. Sans docstring précise, l'orchestrateur peut appeler le mauvais agent."},
+  {cat:"orchestration", q:"Combien de terminaux faut-il pour lancer l'architecture complète du Lab 4 Retail CPG ?", opts:["4 terminaux (un par agent)", "2 terminaux (orchestrateur + agents)", "1 seul terminal (un seul script Python)", "3 terminaux (FAQ, Product, Inventory)"], ans:2, exp:"Le Lab 4 utilise <strong>1 seul script</strong> (<code>python Orchestrator.py</code>) car tous les agents sont importés comme modules Python dans le même processus. C'est différent de l'architecture A2A qui nécessite 4 terminaux séparés."},
+  {cat:"orchestration", q:"Une requête complexe peut-elle déclencher plusieurs agents en séquence dans l'orchestrateur ?", opts:["Non, l'orchestrateur choisit un seul agent par requête", "Oui, l'orchestrateur peut enchaîner plusieurs agents", "Oui, mais seulement 2 au maximum", "Non, les agents s'excluent mutuellement"], ans:1, exp:"Oui, l'orchestrateur LLM peut déclencher <strong>plusieurs agents en séquence</strong>. Ex : une requête 'Je veux une robe midi disponible en stock' peut déclencher d'abord product_search_agent puis inventory_agent."},
+  {cat:"orchestration", q:"Quelle est la différence principale entre l'orchestration A2A et @tool en termes de déploiement ?", opts:["A2A = agents dans le même processus, @tool = processus séparés", "@tool = agents dans le même processus, A2A = processus séparés sur des ports", "Les deux fonctionnent de la même façon en production", "@tool = agents cloud, A2A = agents locaux"], ans:1, exp:"<code>@tool</code> wrapping = tous les agents dans le <strong>même processus Python</strong> (appel de fonction local). A2A = chaque agent dans un <strong>processus séparé</strong> sur un port HTTP distinct. A2A est plus scalable mais plus complexe."},
+  {cat:"code", q:"Que fait ce code ? Agent(model='us.anthropic.claude-haiku-4-5-20251001-v1:0', system_prompt='Tu es un expert.')", opts:["Crée un agent avec le modèle Haiku par défaut et un system prompt personnalisé", "Lance immédiatement l'agent avec le prompt comme première question", "Crée un agent sans système de prompt (ignoré)", "Lance une erreur car model et system_prompt ne peuvent pas être combinés"], ans:0, exp:"Ce code crée un agent avec le <strong>modèle Haiku</strong> et un <strong>system_prompt</strong> personnalisé. L'agent n'est pas encore invoqué — il faut ensuite appeler <code>agent('question')</code> pour l'utiliser."},
+  {cat:"code", q:"Quel est le problème dans ce code ?\n\nasync_agent = Agent(tools=[calculator])\nasync for event in async_agent.stream_async('question'):\n    print(event.get('data', ''))", opts:["stream_async n'existe pas, utiliser stream()", "Il manque callback_handler=None dans Agent()", "async_agent doit être créé avec await", "print ne fonctionne pas dans une boucle async"], ans:1, exp:"Il manque <code>callback_handler=None</code> dans la création de l'agent. Sans cela, le handler par défaut Strands s'active en même temps que la boucle async, provoquant un <strong>double affichage</strong>."},
+  {cat:"code", q:"Que retourne ce code ?\n\nssm = boto3.client('ssm')\nresult = ssm.get_parameter(Name='faq_kb_id')\nprint(result)", opts:["Le Knowledge Base ID directement en string", "Un dict boto3 complet avec ['Parameter']['Value'] contenant l'ID", "Une liste de paramètres SSM", "Une exception si le paramètre n'existe pas"], ans:1, exp:"<code>get_parameter()</code> retourne un dict boto3. Pour obtenir la valeur : <code>result['Parameter']['Value']</code>. Si le paramètre n'existe pas, une exception <code>ClientError</code> avec code <code>ParameterNotFound</code> est levée."},
+  {cat:"code", q:"Quel est le bug dans ce code ?\n\nmcp = MCPClient(lambda: streamable_http_client('http://localhost:8082/mcp/'))\nmcp_tools = mcp.list_tools_sync()\nagent = Agent(tools=mcp_tools)\nagent('question')", opts:["MCPClient ne prend pas de lambda", "list_tools_sync() et agent() doivent être dans le bloc 'with mcp:'", "streamable_http_client n'existe pas", "tools= ne peut pas contenir des outils MCP"], ans:1, exp:"Le bug : <code>list_tools_sync()</code> et <code>agent()</code> doivent être dans le bloc <code>with mcp:</code>. La connexion HTTP est fermée en dehors du contexte <code>with</code>."},
+  {cat:"code", q:"Qu'est-ce qui manque dans ce @tool ?\n\n@tool\ndef get_price(product_id: str):\n    return db.get(product_id)['price']", opts:["Le typage du retour (-> float)", "La docstring obligatoire", "Le décorateur @tool n'est pas valide sans arguments", "Le paramètre self"], ans:1, exp:"La <strong>docstring est obligatoire</strong> pour les @tool Strands. Sans elle, l'agent LLM ne sait pas à quoi sert l'outil ni quand l'appeler. La docstring doit inclure une description et une section Args:."},
+  {cat:"code", q:"Que fait ce code ?\n\nbedrock_runtime = boto3.client('bedrock-runtime')\nresponse = bedrock_runtime.apply_guardrail(\n    guardrailIdentifier=gid, guardrailVersion='DRAFT',\n    source='INPUT', content=[{'text': {'text': 'test'}}])\nprint(response.get('action'))", opts:["Crée un nouveau guardrail et teste le texte 'test'", "Teste si le texte 'test' est bloqué par le guardrail en entrée", "Liste tous les guardrails actifs", "Applique le guardrail à la sortie du modèle"], ans:1, exp:"Ce code <strong>teste directement</strong> si le texte 'test' serait bloqué par le guardrail en tant qu'INPUT, sans passer par un agent. <code>response.get('action')</code> vaut <code>'GUARDRAIL_INTERVENED'</code> si bloqué."},
+  {cat:"code", q:"Que fait BedrockModel(model_id=..., guardrail_id=gid, guardrail_version='DRAFT', guardrail_trace='enabled') ?", opts:["Crée un guardrail avec cet ID", "Attache un guardrail existant au modèle avec les logs activés", "Teste si le guardrail est valide", "Désactive le guardrail pour ce modèle"], ans:1, exp:"Ce code <strong>attache un guardrail existant</strong> au modèle BedrockModel. <code>guardrail_trace='enabled'</code> active les logs des règles déclenchées. Le guardrail filtrera toutes les interactions de ce modèle."},
+  {cat:"code", q:"Quel est le problème dans ce code ?\n\nbedrock_client = boto3.client('bedrock')\nresponse = bedrock_client.apply_guardrail(\n    guardrailIdentifier=gid, source='INPUT',\n    content=[{'text': {'text': 'test'}}])", opts:["apply_guardrail ne prend pas de 'content'", "apply_guardrail est sur bedrock-runtime, pas bedrock", "Il manque le paramètre guardrailVersion", "source doit être 'USER_INPUT' pas 'INPUT'"], ans:1, exp:"Le bug : <code>apply_guardrail()</code> est sur le client <code>boto3.client('bedrock-runtime')</code> (plan données), pas sur <code>boto3.client('bedrock')</code> (plan contrôle). <code>bedrock</code> sert à créer des ressources, pas à les invoquer."},
+  {cat:"code", q:"Qu'est-ce que ce code fait réellement ?\n\naws_agent = Agent(tools=[use_aws])\nresult = aws_agent.tool.use_aws(\n    service_name='dynamodb', operation_name='get_item',\n    parameters={'TableName': 'table', 'Key': {'id': {'S': 'abc'}}},\n    region='us-west-2', label='test'\n)", opts:["Demande à l'agent LLM d'appeler DynamoDB", "Appelle directement DynamoDB get_item sans passer par le LLM", "Lance une recherche dans toute la table DynamoDB", "Crée un item dans DynamoDB"], ans:1, exp:"C'est un appel <strong>programmatique direct</strong> via <code>aws_agent.tool.use_aws(...)</code> — le LLM n'intervient pas. C'est le pattern 'double agent' : aws_agent comme wrapper programmatique pour DynamoDB."},
+  {cat:"code", q:"Que fait asyncio.run() dans un notebook Jupyter ?", opts:["Lance la coroutine normalement", "Lève une RuntimeError car un event loop est déjà actif", "Crée un second event loop en parallèle", "S'exécute silencieusement sans effet"], ans:1, exp:"<code>asyncio.run()</code> lève une <strong>RuntimeError</strong> dans Jupyter car un event loop est déjà en cours d'exécution. Dans Jupyter, utiliser directement <code>await ma_coroutine()</code>."},
+  {cat:"code", q:"Quel est le résultat de ce code ?\n\nagent = Agent(\n    tools=[faq_agent_tool, inventory_agent_tool],\n    system_prompt='Utilise faq_agent_tool pour les politiques.\nUtilise inventory_agent_tool pour le stock.'\n)\nagent('Le produit PROD-001 est-il en stock ?')", opts:["Lance une erreur car l'agent ne peut pas appeler d'autres agents", "L'orchestrateur appelle inventory_agent_tool pour répondre", "L'orchestrateur appelle faq_agent_tool car le system prompt est ambigu", "L'orchestrateur appelle les deux outils en parallèle"], ans:1, exp:"L'orchestrateur LLM lit la docstring de chaque @tool et le system prompt pour décider. La question porte sur le stock → <code>inventory_agent_tool</code> est appelé. C'est le mécanisme de routing intelligent."},
+  {cat:"pièges", q:"Piège d'exam : bedrock vs bedrock-runtime — lequel utilise-t-on pour create_guardrail ?", opts:["bedrock-runtime", "bedrock", "bedrock-agent", "bedrock-control"], ans:1, exp:"<code>boto3.client('bedrock')</code> = plan de <strong>contrôle</strong> : créer/lister/modifier des ressources (guardrails, knowledge bases). <code>bedrock-runtime</code> = plan de <strong>données</strong> : invoquer des modèles, appliquer des guardrails."},
+  {cat:"pièges", q:"Piège : que se passe-t-il si on oublie callback_handler=None avec stream_async() ?", opts:["L'agent ne stream pas, il retourne tout d'un coup", "Double affichage du texte généré", "Une exception asyncio est levée", "Le streaming est plus lent"], ans:1, exp:"Sans <code>callback_handler=None</code>, le handler par défaut Strands affiche le texte EN MÊME TEMPS que ta boucle <code>async for</code>, produisant un <strong>double affichage</strong> de chaque chunk de texte."},
+  {cat:"pièges", q:"Piège : où s'attache un guardrail — sur Agent() ou sur BedrockModel() ?", opts:["Sur Agent() avec le paramètre guardrail_id", "Sur BedrockModel() avec les paramètres guardrail_id et guardrail_version", "Sur les deux simultanément", "Sur @tool avec guardrail=True"], ans:1, exp:"Le guardrail s'attache sur <strong>BedrockModel()</strong> via <code>guardrail_id</code>, <code>guardrail_version</code> et <code>guardrail_trace</code>. Ensuite l'agent utilise ce modèle configuré : <code>Agent(model=bedrock_model_with_guardrail)</code>."},
+  {cat:"pièges", q:"Piège : quelle version faut-il utiliser pour guardrail_version si le guardrail vient d'être créé ?", opts:["'1'", "'DRAFT'", "'LATEST'", "'v1'"], ans:1, exp:"Juste après création, la version est <code>'DRAFT'</code>. C'est la valeur à passer à <code>guardrail_version</code> et à <code>apply_guardrail(guardrailVersion='DRAFT')</code>. Les versions numériques ('1', '2'...) correspondent aux guardrails publiés."},
+  {cat:"pièges", q:"Piège : quelle est la structure correcte du 'content' dans apply_guardrail ?", opts:["content=[{'text': 'mon texte'}]", "content=[{'text': {'text': 'mon texte'}}]", "content={'text': 'mon texte'}", "content='mon texte'"], ans:1, exp:"La structure exacte est <code>content=[{'text': {'text': 'mon texte'}}]</code> — une liste avec un dict contenant 'text' comme clé, dont la valeur est un dict avec 'text' comme clé. C'est la structure AWS Bedrock."},
+  {cat:"pièges", q:"Piège : une docstring manquante sur un @tool provoque-t-elle une erreur Python ?", opts:["Oui, Strands lève une ValueError au démarrage", "Non, mais l'agent ne saura jamais quand appeler cet outil", "Oui, une SyntaxError est levée", "Non, l'agent devine le comportement à partir du nom de la fonction"], ans:1, exp:"Une docstring manquante ne lève pas d'erreur Python, mais l'agent LLM n'aura <strong>aucune information</strong> sur à quoi sert l'outil. Il ne l'appellera jamais ou de façon aléatoire. Donc fonctionnellement : la docstring est obligatoire."},
+  {cat:"pièges", q:"Piège : peut-on passer temperature=0.3 ET top_p=0.8 à BedrockModel avec Claude Haiku ?", opts:["Oui, les deux sont toujours supportés", "Non, Claude Haiku ne supporte qu'un seul des deux à la fois", "Oui, mais il faut boto_client_config en plus", "Non, aucun des deux n'est supporté par Claude Haiku"], ans:1, exp:"Claude Haiku ne supporte pas <code>temperature</code> ET <code>top_p</code> simultanément. Il faut commenter l'un des deux. D'autres modèles (Nova Premier, Sonnet) supportent les deux."},
+  {cat:"pièges", q:"Piège : faut-il créer un nouveau MCPClient pour chaque requête dans ProductSearchAgent.py ?", opts:["Non, on réutilise le même client global", "Oui, le MCPClient est créé dans la fonction qui gère chaque requête", "Non, le MCPClient est initialisé au démarrage une seule fois", "Le MCPClient se gère automatiquement"], ans:1, exp:"Dans <code>ProductSearchAgent.py</code>, <code>product_search_agent()</code> est une fonction qui crée le <code>MCPClient</code> ET l'agent à chaque appel, à l'intérieur du <code>with mcp_client:</code>. C'est pourquoi c'est une fonction et non un objet Agent global."},
+  {cat:"pièges", q:"Piège : que signifie 'us.' dans model_id='us.anthropic...' — est-ce que ça restreint à us-east-1 ?", opts:["Oui, ça sélectionne us-east-1 spécifiquement", "Non, c'est le routage cross-region US (plusieurs régions)", "Oui, mais on peut changer avec region_name=", "Non, 'us.' est un préfixe arbitraire sans signification géographique"], ans:1, exp:"Le préfixe <code>us.</code> active le <strong>routage cross-region AWS</strong> sur plusieurs régions US (us-east-1, us-west-2...). Ce n'est pas restrictif à une seule région — c'est du load balancing multi-région."},
+  {cat:"fondamentaux", q:"Quelle méthode de l'agent permet le streaming en mode asynchrone ?", opts:["agent.async_stream()", "agent.stream_async()", "agent.stream(async=True)", "await agent()"], ans:1, exp:"<code>agent.stream_async(query)</code> retourne un async generator. On l'utilise avec <code>async for event in agent.stream_async(query):</code>."},
+  {cat:"fondamentaux", q:"Comment passer uniquement un ID de modèle string à un Agent Strands ?", opts:["Agent(model_id='us.anthropic...')", "Agent(model='us.anthropic...')", "Agent(bedrock_model='us.anthropic...')", "Agent(llm='us.anthropic...')"], ans:1, exp:"Le paramètre est <code>model=</code> (pas <code>model_id=</code>). On peut passer directement un string : <code>Agent(model='us.anthropic.claude-haiku...')</code>. <code>model_id=</code> est le paramètre de BedrockModel, pas d'Agent."},
+  {cat:"mcp", q:"Quel paramètre de MCPClient prend une fonction lambda ?", opts:["MCPClient(url=lambda: ...)", "MCPClient(lambda: streamable_http_client(...))", "MCPClient(transport=lambda: ...)", "MCPClient(factory=lambda: ...)"], ans:1, exp:"<code>MCPClient(lambda: streamable_http_client('url'))</code> — le premier argument positionnel est la <strong>transport factory</strong> : une fonction (lambda) qui retourne la connexion. Pas de paramètre nommé."},
+  {cat:"kb", q:"Quelle est la méthode SSM pour ÉCRIRE ou METTRE À JOUR un paramètre ?", opts:["ssm.set_parameter(Name=..., Value=...)", "ssm.put_parameter(Name=..., Value=..., Type='String', Overwrite=True)", "ssm.create_parameter(Name=..., Value=...)", "ssm.write_parameter(Name=..., Value=...)"], ans:1, exp:"<code>ssm.put_parameter(Name=..., Value=..., Type='String', Overwrite=True)</code> — le paramètre <code>Overwrite=True</code> est essentiel pour les mises à jour. Sans lui, une erreur est levée si le paramètre existe déjà."},
+  {cat:"outils", q:"Quel est le paramètre 'label' dans aws_agent.tool.use_aws() ?", opts:["Le label qui identifie l'outil dans les logs de l'agent", "Le nom de la table DynamoDB cible", "Le nom de l'opération AWS à effectuer", "Un identifiant unique requis par AWS"], ans:0, exp:"Le paramètre <code>label</code> est <strong>uniquement pour le logging</strong> — il apparaît dans les traces pour identifier l'appel. Il n'affecte pas le comportement de l'appel AWS."},
+  {cat:"guardrails", q:"Comment récupérer l'ID et l'ARN d'un guardrail nouvellement créé ?", opts:["response['id'] et response['arn']", "response.get('guardrailId') et response.get('guardrailArn')", "response['guardrail']['id'] et response['guardrail']['arn']", "response.id et response.arn"], ans:1, exp:"La réponse de <code>create_guardrail()</code> contient <code>response.get('guardrailId')</code> et <code>response.get('guardrailArn')</code>. L'ID sera utilisé dans <code>BedrockModel(guardrail_id=...)</code>."},
+  {cat:"orchestration", q:"FAQAgent.py expose-t-il un objet Agent ou une fonction ?", opts:["Une fonction faq_agent()", "Un objet Agent nommé faq_agent", "Une classe FAQAgent", "Un module avec plusieurs agents"], ans:1, exp:"<code>FAQAgent.py</code> expose <code>faq_agent</code> qui est l'<strong>objet Agent</strong> directement. Dans l'orchestrateur : <code>from FAQAgent import faq_agent</code> puis dans le @tool : <code>return faq_agent(query)</code> (appelé comme une fonction)."},
+  {cat:"orchestration", q:"ProductSearchAgent.py expose-t-il un objet Agent ou une fonction ?", opts:["Un objet Agent nommé product_search_agent", "Une fonction product_search_agent() qui crée l'agent à chaque appel", "Une classe ProductSearchAgent", "Deux objets Agent (avec et sans MCP)"], ans:1, exp:"<code>ProductSearchAgent.py</code> expose une <strong>fonction</strong> <code>product_search_agent(input_query)</code> qui crée l'agent ET la connexion MCP à chaque appel. Contrairement à FAQAgent qui expose l'objet Agent directement."},
+  {cat:"fondamentaux", q:"Quel niveau de log faut-il passer à setLevel pour DÉSACTIVER les logs de debug Strands ?", opts:["logging.INFO", "logging.ERROR", "logging.WARNING", "logging.CRITICAL"], ans:1, exp:"<code>logging.getLogger('strands').setLevel(logging.ERROR)</code> désactive les logs de debug en ne laissant passer que les erreurs. On peut aussi utiliser <code>logging.CRITICAL</code> pour un silence quasi-total."},
+  {cat:"a2a", q:"Que faut-il inclure en plus de 'name' dans Agent() pour qu'il soit utilisable comme serveur A2A ?", opts:["Le paramètre 'port'", "Les paramètres 'name' et 'description'", "Le paramètre 'a2a=True'", "Rien de spécial, tout agent peut être serveur A2A"], ans:1, exp:"Pour un agent A2A, il faut <code>name</code> (nom de l'agent) et <code>description</code> (ce que fait l'agent) en plus du <code>system_prompt</code> et des <code>tools</code>. La <code>description</code> est utilisée par le client A2A pour choisir quel agent contacter."},
+  {cat:"mcp", q:"Quel est le port par défaut du serveur MCP dans le workshop D&D ?", opts:["8000", "8001", "8082", "8009"], ans:2, exp:"Le serveur MCP de dés (<code>dice_roll_mcp_server.py</code>) tourne sur le port <strong>8082</strong>. Les agents spécialisés utilisent 8000 (Rules) et 8001 (Character). L'orchestrateur utilise 8009."},
+  {cat:"code", q:"Quel import est correct pour MCPClient dans le workshop Retail CPG ?", opts:["from strands.tools.mcp.mcp_client import MCPClient", "from strands.tools.mcp import MCPClient", "from strands_tools import MCPClient", "Les deux premières options sont correctes"], ans:3, exp:"Les deux imports fonctionnent : <code>from strands.tools.mcp.mcp_client import MCPClient</code> (chemin complet) et <code>from strands.tools.mcp import MCPClient</code> (alias court). Les deux sont valides dans ces workshops."},
+  {cat:"kb", q:"numberOfResults dans retrieve contrôle quoi exactement ?", opts:["Le nombre maximum de tokens dans la réponse", "Le nombre de chunks de documents retournés", "Le nombre de requêtes simultanées", "Le nombre de Knowledge Bases interrogées"], ans:1, exp:"<code>numberOfResults=3</code> contrôle le nombre de <strong>chunks de documents</strong> retournés par la Knowledge Base. Plus on en demande, plus l'agent a de contexte, mais la requête est plus lente et coûteuse."},
+  {cat:"fondamentaux", q:"Comment récupérer la région AWS depuis une session boto3 ?", opts:["boto3.get_region()", "boto3.Session().region_name", "os.getenv('AWS_REGION')", "boto3.client('sts').get_region()"], ans:1, exp:"<code>region = boto3.Session().region_name</code> est la façon standard utilisée dans ces workshops. Elle retourne la région configurée dans les credentials/variables d'environnement."},
+  {cat:"outils", q:"Quel paramètre de @tool doit documenter chaque argument avec leur type ?", opts:["Le commentaire inline", "La section Args: dans la docstring", "Le typage Python des paramètres", "Les deux : typage ET section Args:"], ans:3, exp:"Les <strong>deux</strong> sont importants : le <strong>typage Python</strong> (<code>param: str</code>) est transmis au LLM via le schéma JSON, et la <strong>section Args:</strong> dans la docstring décrit sémantiquement chaque paramètre pour que l'agent comprenne quoi passer."},
+  {cat:"guardrails", q:"Quelle action l'agent doit-il prendre quand response.stop_reason == 'guardrail_intervened' ?", opts:["Réessayer automatiquement la requête", "Détecter le blocage et arrêter sans planter", "Ignorer le guardrail et continuer", "Appeler un agent de fallback"], ans:1, exp:"Le code de détection est : <code>if hasattr(response, 'stop_reason') and response.stop_reason == 'guardrail_intervened': print('GUARDRAIL INTERVENED!')</code>. L'agent s'arrête proprement — pas de réessai automatique."},
+  {cat:"orchestration", q:"Dans le workshop D&D ch.5, l'orchestrateur expose une API via quelle librairie ?", opts:["Flask", "Django", "FastAPI avec uvicorn", "aiohttp"], ans:2, exp:"L'orchestrateur Game Master utilise <code>FastAPI</code> avec <code>uvicorn</code> pour exposer l'endpoint <code>POST /inquire</code>. Le body est une requête Pydantic <code>class QuestionRequest(BaseModel): question: str</code>."},
+  {cat:"code", q:"Que retourne str(response) quand response est la réponse d'un agent Strands ?", opts:["Un dict JSON de la réponse", "Le texte de la réponse sous forme de string", "L'objet response sérialisé", "Une erreur TypeError"], ans:1, exp:"<code>str(response)</code> retourne le <strong>texte de la réponse</strong> de l'agent. C'est utilisé dans <code>ProductSearchAgent.py</code> : <code>return str(agent(input_query))</code> pour retourner le résultat en string."},
+  {cat:"fondamentaux", q:"Quel module Python standard gère les logs dans ces workshops Strands ?", opts:["strands.logging", "Python built-in logging", "structlog", "loguru"], ans:1, exp:"Le module <strong>built-in Python <code>logging</code></strong> est utilisé : <code>import logging; logging.getLogger('strands').setLevel(logging.DEBUG)</code>. Pas de librairie externe."},
+  {cat:"pièges", q:"Piège : que se passe-t-il si Overwrite=True est absent dans ssm.put_parameter() pour un paramètre existant ?", opts:["Le paramètre est mis à jour silencieusement", "Une ParameterAlreadyExists exception est levée", "Le paramètre est dupliqué", "L'appel est ignoré silencieusement"], ans:1, exp:"Sans <code>Overwrite=True</code>, SSM lève une exception <code>ParameterAlreadyExists</code> si le paramètre existe déjà. C'est pourquoi le code dans <code>ProductSearchAgent.py</code> utilise <code>ssm_client.put_parameter(..., Overwrite=True)</code>."},
+  {cat:"mcp", q:"Quel est le nom complet du module d'import pour streamable_http_client ?", opts:["from mcp.client import streamable_http_client", "from mcp.client.streamable_http import streamable_http_client", "from strands.mcp import streamable_http_client", "from mcp import streamable_http_client"], ans:1, exp:"L'import complet est <code>from mcp.client.streamable_http import streamable_http_client</code> (ou <code>streamablehttp_client</code> sans underscore selon la version). Le module est <code>mcp.client.streamable_http</code>."},
+  {cat:"a2a", q:"Quelle librairie utilise-t-on pour stocker les personnages dans character_agent.py du workshop D&D ?", opts:["sqlite3", "TinyDB", "MongoDB", "DynamoDB"], ans:1, exp:"<code>TinyDB</code> est utilisée dans <code>character_agent.py</code> pour stocker les personnages D&D dans un fichier JSON local (<code>characters.json</code>). C'est une base de données JSON légère, pas un service AWS."},
+  {cat:"fondamentaux", q:"Quel BotocoreConfig mode de retry est utilisé dans les workshops ?", opts:["'adaptive'", "'standard'", "'legacy'", "'exponential'"], ans:1, exp:"<code>BotocoreConfig(retries={'max_attempts': 2, 'mode': 'standard'})</code> — le mode <strong>'standard'</strong> est utilisé. Il inclut un backoff exponentiel automatique entre les tentatives."},
+  {cat:"orchestration", q:"Que fait l'endpoint GET /messages sur l'orchestrateur Game Master FastAPI ?", opts:["Liste les outils disponibles", "Retourne l'historique des messages de l'agent", "Retourne la santé du service", "Liste les agents connectés"], ans:1, exp:"<code>@app.get('/messages')</code> retourne <code>agent.messages</code> — l'<strong>historique complet des messages</strong> de l'agent (toutes les interactions passées). L'endpoint <code>/health</code> retourne le statut de santé."},
+  {cat:"pièges", q:"Piège : @mcp.tool() vs @tool — quel est l'usage de chacun ?", opts:["Ce sont des alias du même décorateur", "@mcp.tool() pour exposer sur un serveur MCP, @tool pour un outil local Strands", "@tool pour serveur MCP, @mcp.tool() pour outil local", "Les deux s'utilisent indifféremment selon le contexte"], ans:1, exp:"<code>@mcp.tool()</code> (FastMCP) = décorateur pour exposer une fonction sur un <strong>serveur MCP</strong> (côté serveur HTTP). <code>@tool</code> (Strands) = décorateur pour un <strong>outil local</strong> d'un agent. Deux contextes complètement différents."},
+  {cat:"kb", q:"Quelle exception boto3 faut-il capturer si un paramètre SSM n'existe pas ?", opts:["boto3.exceptions.SSMParameterNotFound", "botocore.exceptions.ClientError avec code ParameterNotFound", "boto3.exceptions.ParameterNotFound", "ssm.exceptions.ParameterNotFound"], ans:1, exp:"Il faut capturer <code>botocore.exceptions.ClientError</code> et vérifier <code>e.response['Error']['Code'] == 'ParameterNotFound'</code>. Le module à importer est <code>from botocore.exceptions import ClientError</code>."},
+  {cat:"code", q:"Quel est l'import correct pour A2AServer ?", opts:["from strands.a2a import A2AServer", "from strands.multiagent.a2a import A2AServer", "from strands_tools.a2a import A2AServer", "from strands.agents import A2AServer"], ans:1, exp:"L'import correct est <code>from strands.multiagent.a2a import A2AServer</code>. Pour le client orchestrateur, c'est <code>from strands_tools.a2a_client import A2AClientToolProvider</code>."},
+  {cat:"code", q:"Quel est l'import correct pour A2AClientToolProvider ?", opts:["from strands.multiagent.a2a import A2AClientToolProvider", "from strands_tools.a2a_client import A2AClientToolProvider", "from strands.a2a import A2AClientToolProvider", "from strands.tools import A2AClientToolProvider"], ans:1, exp:"L'import correct est <code>from strands_tools.a2a_client import A2AClientToolProvider</code>. Attention : A2AServer vient de <code>strands.multiagent.a2a</code>, mais A2AClientToolProvider vient de <code>strands_tools.a2a_client</code>."},
+];
+
+let filtered = [...ALL_QUESTIONS];
+let filteredIndices = ALL_QUESTIONS.map((_, i) => i);
+let current = 0;
+let answered = {};
+let wrongIndices = [];
+let activeFilter = 'tout';
+
+const cats = ['tout', ...new Set(ALL_QUESTIONS.map(q => q.cat))];
+const catCls = {fondamentaux:'cat-fondamentaux', outils:'cat-outils', mcp:'cat-mcp', a2a:'cat-a2a', guardrails:'cat-guardrails', kb:'cat-kb', orchestration:'cat-orchestration', pièges:'cat-pièges', code:'cat-code'};
+const LETTERS = ['A','B','C','D'];
+
+function buildFilters() {
+  const bar = document.getElementById('filterBar');
+  cats.forEach(c => {
+    const cnt = c === 'tout' ? ALL_QUESTIONS.length : ALL_QUESTIONS.filter(q => q.cat === c).length;
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (c === 'tout' ? ' active' : '');
+    btn.id = 'f-' + c;
+    btn.textContent = c.charAt(0).toUpperCase() + c.slice(1) + ` (${cnt})`;
+    btn.onclick = () => applyFilter(c);
+    bar.appendChild(btn);
+  });
+}
+
+function applyFilter(cat) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('f-' + cat).classList.add('active');
+  activeFilter = cat;
+  filteredIndices = ALL_QUESTIONS.map((_, i) => i).filter(i => cat === 'tout' || ALL_QUESTIONS[i].cat === cat);
+  filtered = filteredIndices.map(i => ALL_QUESTIONS[i]);
+  answered = {};
+  wrongIndices = [];
+  current = 0;
+  document.getElementById('scoreScreen').classList.remove('visible');
+  updateStatBar();
+  renderQ();
+}
+
+function renderQ() {
+  if (current >= filtered.length) { showScore(); return; }
+  const q = filtered[current];
+  const isAnswered = answered[current] !== undefined;
+  const userAns = answered[current];
+
+  let catHtml = `<span class="q-cat ${catCls[q.cat] || ''}">${q.cat}</span>`;
+  let codeBlock = q.code ? `<div class="q-code">${q.code}</div>` : '';
+  let qText = q.q;
+  if (qText.includes('\n')) { const parts = qText.split('\n'); qText = parts[0]; codeBlock = `<div class="q-code">${parts.slice(1).join('\n')}</div>`; }
+
+  let optsHtml = q.opts.map((o, i) => {
+    let cls = 'opt';
+    if (isAnswered) { cls += ' disabled'; if (i === q.ans) cls += ' correct'; else if (i === userAns && userAns !== q.ans) cls += ' wrong'; }
+    else if (userAns === i) cls += ' selected';
+    return `<div class="${cls}" onclick="${isAnswered ? '' : `selectOpt(${i})`}">
+      <span class="letter">${LETTERS[i]}</span>
+      <span>${o}</span>
+    </div>`;
+  }).join('');
+
+  let expHtml = '';
+  if (isAnswered) {
+    const ok = userAns === q.ans;
+    expHtml = `<div class="explication visible">
+      <div class="exp-label ${ok ? 'exp-ok' : 'exp-ko'}">${ok ? '✓ Correct' : '✗ Incorrect'}</div>
+      ${q.exp}
+    </div>`;
+  }
+
+  let validateBtn = `<button class="btn-validate" id="btnValidate" onclick="validate()" disabled>Valider</button>`;
+  let nextBtn = `<button class="btn-next ${isAnswered ? 'visible' : ''}" onclick="nextQ()">Question suivante →</button>`;
+
+  document.getElementById('qArea').innerHTML = `
+    <div class="q-card">
+      <div class="q-header">
+        <span class="q-num">Q${current+1}/${filtered.length}</span>
+        ${catHtml}
+      </div>
+      <div class="q-text">${qText}</div>
+      ${codeBlock}
+      <div class="options" id="options">${optsHtml}</div>
+      ${expHtml}
+      <div class="q-actions">${isAnswered ? '' : validateBtn}${nextBtn}</div>
+    </div>`;
+
+  if (isAnswered && userAns !== undefined) {
+    const pb = document.getElementById('progressBar');
+    pb.className = 'progress-bar ' + (userAns === q.ans ? 'pb-ok' : 'pb-ko');
+  }
+  updateStatBar();
+}
+
+let selectedOpt = null;
+function selectOpt(i) {
+  selectedOpt = i;
+  document.querySelectorAll('.opt').forEach((el, j) => {
+    el.classList.remove('selected');
+    if (j === i) el.classList.add('selected');
+    el.querySelector('.letter').style.background = j === i ? '#4f6ef7' : '';
+    el.querySelector('.letter').style.borderColor = j === i ? '#4f6ef7' : '';
+    el.querySelector('.letter').style.color = j === i ? '#fff' : '';
+  });
+  const btn = document.getElementById('btnValidate');
+  if (btn) btn.disabled = false;
+}
+
+function validate() {
+  if (selectedOpt === null) return;
+  answered[current] = selectedOpt;
+  if (selectedOpt !== filtered[current].ans) wrongIndices.push(filteredIndices[current]);
+  selectedOpt = null;
+  updateStatBar();
+  renderQ();
+}
+
+function nextQ() {
+  current++;
+  selectedOpt = null;
+  if (current >= filtered.length) { showScore(); return; }
+  renderQ();
+  updateStatBar();
+}
+
+function updateStatBar() {
+  const ok = Object.values(answered).filter((v,i) => v === filtered[i]?.ans).length;
+  const ko = Object.keys(answered).length - ok;
+  const done = Object.keys(answered).length;
+  document.getElementById('statQ').textContent = Math.min(current+1, filtered.length);
+  document.getElementById('statTotal').textContent = filtered.length;
+  document.getElementById('statOk').textContent = ok;
+  document.getElementById('statKo').textContent = ko;
+  document.getElementById('statPct').textContent = done > 0 ? Math.round(ok/done*100) + '%' : '–';
+  const pct = done / filtered.length * 100;
+  const pb = document.getElementById('progressBar');
+  pb.style.width = pct + '%';
+}
+
+function showScore() {
+  document.getElementById('qArea').innerHTML = '';
+  const total = filtered.length;
+  const ok = Object.values(answered).filter((v,i) => v === filtered[i]?.ans).length;
+  const ko = total - ok;
+  const pct = Math.round(ok/total*100);
+  let scoreClass = pct >= 80 ? 'score-green' : pct >= 60 ? 'score-orange' : 'score-red';
+  let msg = pct >= 80 ? '🎯 Excellent ! Tu es prêt pour le partiel.' : pct >= 60 ? '👍 Bien ! Révise les points à revoir.' : '📚 Continue à réviser, focus sur les points faibles.';
+
+  const catStats = {};
+  filtered.forEach((q, i) => {
+    if (!catStats[q.cat]) catStats[q.cat] = {ok:0,total:0};
+    catStats[q.cat].total++;
+    if (answered[i] === q.ans) catStats[q.cat].ok++;
+  });
+  const catHtml = Object.entries(catStats).map(([c,s]) => {
+    const p = Math.round(s.ok/s.total*100);
+    const col = p >= 80 ? '#22c55e' : p >= 60 ? '#f59e0b' : '#ef4444';
+    return `<div class="cat-cell"><div class="cat-name">${c}</div><div class="cat-score" style="color:${col}">${s.ok}/${s.total} (${p}%)</div></div>`;
+  }).join('');
+
+  const wrongBtn = wrongIndices.length > 0 ? `<button class="btn-restart-ko" onclick="restartWrong()">Réviser les ${wrongIndices.length} erreurs</button>` : '';
+
+  document.getElementById('scoreScreen').innerHTML = `
+    <div class="score-big ${scoreClass}">${pct}%</div>
+    <div class="score-sub">${ok} bonnes réponses sur ${total}</div>
+    <div class="score-row">
+      <div class="score-cell ok"><strong>${ok}</strong>Correct</div>
+      <div class="score-cell ko"><strong>${ko}</strong>Incorrect</div>
+    </div>
+    <div class="score-msg">${msg}</div>
+    <div class="cat-breakdown">${catHtml}</div>
+    <button class="btn-restart" onclick="applyFilter('${activeFilter}')">Recommencer</button>
+    ${wrongBtn}
+  `;
+  document.getElementById('scoreScreen').classList.add('visible');
+  document.getElementById('progressBar').style.width = '100%';
+  document.getElementById('progressBar').className = 'progress-bar ' + (pct >= 70 ? 'pb-ok' : 'pb-ko');
+}
+
+function restartWrong() {
+  const wrongSet = [...new Set(wrongIndices)];
+  filteredIndices = wrongSet;
+  filtered = wrongSet.map(i => ALL_QUESTIONS[i]);
+  answered = {};
+  wrongIndices = [];
+  current = 0;
+  document.getElementById('scoreScreen').classList.remove('visible');
+  renderQ();
+  updateStatBar();
+}
+
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+  const idx = ['KeyA','KeyB','KeyC','KeyD'].indexOf(e.code);
+  if (idx >= 0 && answered[current] === undefined) selectOpt(idx);
+  if (e.code === 'Enter') {
+    if (answered[current] !== undefined) nextQ();
+    else if (selectedOpt !== null) validate();
+  }
+});
+
+buildFilters();
+applyFilter('tout');
+</script>
+</body>
+</html>
